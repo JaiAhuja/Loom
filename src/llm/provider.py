@@ -21,6 +21,7 @@ def get_llm(model: str = None, temperature: float = None) -> ChatOllama:
     if key not in _llm_cache:
         _llm_cache[key] = ChatOllama(
             model=resolved_model,
+            streaming=True,
             base_url=settings.OLLAMA_BASE_URL,
             temperature=resolved_temp,
         )

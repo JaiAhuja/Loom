@@ -65,39 +65,41 @@ class PaperProfile(BaseModel):
 # pipelines benefit from it without duplication)
 # ---------------------------------------------------------------------------
 
-_SKIP_KEYWORDS = {
-    "reference", "bibliography", "appendix", "acknowledgment",
-    "acknowledgement", "vita", "biograph",
+_STRICT_PRIORITY_KEYWORDS = {
+    # The Gist/Summary
+    "abstract", "summary", "synopsis", "executive summary", "highlights", 
+    "in brief", "key points",
+    "results", "findings", "outcomes", "observations", "analysis",
+    "conclusion", "concluding remarks", "conclusions", "summary of findings",
+    "implications", "contributions"
 }
-_PRIORITY_KEYWORDS = {
-    "abstract", "introduction", "conclusion", "summary",
-    "results", "findings", "discussion",
-}
 
-
-def select_key_sections(text: str, budget: int = 12000) -> str:
-    """Pick the most informative sections from a Markdown paper.
-
-    Splits on Markdown headings, skips reference/appendix sections,
-    prioritises abstract/intro/conclusion/results, then fills with
-    remaining sections until *budget* characters are reached.
+def select_key_sections(text: str, budget: int = 15000) -> str:
+    """Strictly picks front matter plus high-signal summary/outcome sections.
+    
+    Excludes high-volume 'filler' like Introduction, Methodology, 
+    Literature Review, and Discussion.
     """
-
     parts = re.split(r"(?=^#{1,3}\s)", text, flags=re.MULTILINE)
+    
+    front_matter: list[str] = []
     prioritised: list[str] = []
-    rest: list[str] = []
+    seen_first_priority = False
 
     for part in parts:
-        header = part.split("\n", 1)[0].lower().strip("# \t")
-        if any(kw in header for kw in _SKIP_KEYWORDS):
+        if not part.strip(): 
             continue
-        if any(kw in header for kw in _PRIORITY_KEYWORDS):
+            
+        header = part.split("\n", 1)[0].lower().strip("# \t")
+        if any(kw in header for kw in _STRICT_PRIORITY_KEYWORDS):
+            seen_first_priority = True
             prioritised.append(part)
         else:
-            rest.append(part)
+            if not seen_first_priority:
+                front_matter.append(part)
 
     selected = ""
-    for section in prioritised + rest:
+    for section in front_matter + prioritised: # Reconstruct: Front matter at the top, then the key sections
         if len(selected) + len(section) <= budget:
             selected += section
         else:
@@ -107,7 +109,6 @@ def select_key_sections(text: str, budget: int = 12000) -> str:
             break
 
     return selected or text[:budget]
-
 
 # ---------------------------------------------------------------------------
 # Extraction
