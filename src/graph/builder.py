@@ -9,7 +9,6 @@ from src.llm import get_llm
 from src.graph_db.connection import Neo4jConnection
 from src.tools.rag_tool import create_rag_tool
 from src.tools.safe_graph_tool import create_safe_graph_tool
-from src.tools.web_search import create_web_search_tool
 
 logger = logging.getLogger(__name__)
 
@@ -18,17 +17,16 @@ class GraphBuilder:
     """Builds configurable LangGraph agents with optional tools.
 
     Dynamically assembles a ReAct-style agent graph based on
-    which features (web search, RAG, knowledge graph) are enabled.
+    which features (RAG, knowledge graph) are enabled.
 
     Usage:
         builder = GraphBuilder()
-        graph = builder.build(use_web_search=True, use_rag=True, collection_name="my_docs")
+        graph = builder.build(use_rag=True, collection_name="my_docs")
         result = graph.invoke({"messages": [HumanMessage(content="Explain MapReduce")]})
     """
 
     def build(
         self,
-        use_web_search: bool = False,
         use_rag: bool = False,
         use_graph: bool = False,
         collection_name: str = None,
@@ -41,7 +39,6 @@ class GraphBuilder:
         """Build and compile the Loom agent graph.
 
         Args:
-            use_web_search: Enable DuckDuckGo web search tool.
             use_rag: Enable RAG document query tool.
             use_graph: Enable Neo4j knowledge graph query tool.
             collection_name: ChromaDB collection name (required if use_rag=True).
@@ -59,10 +56,10 @@ class GraphBuilder:
         """
         llm = get_llm(model=model, temperature=temperature)
         tools = self._gather_tools(
-            use_web_search, use_rag, use_graph, collection_name, model,
+            use_rag, use_graph, collection_name, model,
             neo4j_conn, vector_store, document_id,
         )
-        system_prompt = build_system_prompt(use_web_search, use_rag, use_graph)
+        system_prompt = build_system_prompt(use_rag, use_graph)
 
         # Build the state graph
         graph = StateGraph(AgentState)
@@ -86,7 +83,6 @@ class GraphBuilder:
 
     def _gather_tools(
         self,
-        use_web_search: bool,
         use_rag: bool,
         use_graph: bool,
         collection_name: str,
@@ -100,9 +96,6 @@ class GraphBuilder:
         Override this method to add custom tools to the agent.
         """
         tools = []
-
-        if use_web_search:
-            tools.append(create_web_search_tool())
 
         if use_rag and collection_name:
             tools.append(create_rag_tool(

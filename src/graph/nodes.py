@@ -53,19 +53,6 @@ takeaways only when they add value.
 - If you do not know, say so honestly — do not fabricate citations.
 """
 
-TOOL_PROMPT_WEB_SEARCH = """
-## Web Search Access:
-
-You have access to a `web_search` tool to search the internet. Use it when:
-- The user asks about very recent developments, releases, or news
-- You need to verify current versions, release dates, or breaking changes
-- The topic requires up-to-date benchmarks, comparisons, or statistics
-- The user explicitly asks you to look something up online
-
-**Always cite sources** (title + URL) when using web search results.
-Do NOT use web search for well-established concepts you already know well.
-"""
-
 TOOL_PROMPT_RAG = """
 ## Document Search Access:
 
@@ -97,21 +84,16 @@ required parameters — consult it before calling.
 
 
 def build_system_prompt(
-    use_web_search: bool = False,
     use_rag: bool = False,
     use_graph: bool = False,
 ) -> str:
     """Build the system prompt with optional tool descriptions.
 
     Args:
-        use_web_search: Whether web search tool is available.
         use_rag: Whether document query tool is available.
         use_graph: Whether knowledge graph query tool is available.
     """
     prompt = SYSTEM_PROMPT_BASE
-
-    if use_web_search:
-        prompt += "\n" + TOOL_PROMPT_WEB_SEARCH
 
     if use_rag:
         prompt += "\n" + TOOL_PROMPT_RAG
@@ -119,7 +101,7 @@ def build_system_prompt(
     if use_graph:
         prompt += "\n" + TOOL_PROMPT_GRAPH
 
-    if not use_web_search and not use_rag and not use_graph:
+    if not use_rag and not use_graph:
         prompt += """
 ## Note:
 You are operating in offline mode with no tool access. Rely entirely on your \

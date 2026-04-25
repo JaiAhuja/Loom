@@ -15,7 +15,6 @@ A **local, fully open-source knowledge graph & AI tutor** for researchers, stude
 | **Local LLM** | Powered by [Ollama](https://ollama.com/) — 100% free, no API keys, runs on your hardware |
 | **LangGraph Orchestration** | ReAct-style agent with dynamic tool routing via [LangGraph](https://langchain-ai.github.io/langgraph/) |
 | **RAG Pipeline** | Upload PDFs → [Docling](https://github.com/DS4SD/docling) extraction → [ChromaDB](https://www.trychroma.com/) storage → Smart retrieval |
-| **Web Search** | Optional [DuckDuckGo](https://duckduckgo.com/) integration — explicit opt-in, no API key needed |
 | **Beautiful Output** | Publication-ready Markdown formatted for [Substack](https://substack.com/) / blogs |
 | **Knowledge Graph** | [Neo4j](https://neo4j.com/) knowledge graph — auto-extracted entities & relationships across papers |
 | **Graph Explorer** | Interactive [Pyvis](https://pyvis.readthedocs.io/) visualization + paper comparison + safe intent-based queries |
@@ -30,11 +29,11 @@ A **local, fully open-source knowledge graph & AI tutor** for researchers, stude
 ┌─────────────────────────────────────────────────────────────────┐
 │                        Streamlit UI                             │
 │  ┌──────────────┐  ┌──────────────────────────────────────────┐ │
-│  │   Sidebar     │  │  Page 1: Chat Interface                 │ │
-│  │ • Model cfg   │  │  User ──► Agent ──► Markdown Response   │ │
-│  │ • Toggles     │  │                                          │ │
-│  │ • PDF Upload  │  │  Page 2: Knowledge Graph Explorer       │ │
-│  │ • Collections │  │  Papers ◄─► Concepts ◄─► Findings       │ │
+│  │   Sidebar    │  │  Page 1: Chat Interface                  │ │
+│  │ • Model cfg  │  │  User ──► Agent ──► Markdown Response    │ │
+│  │ • Toggles    │  │                                          │ │
+│  │ • PDF Upload │  │  Page 2: Knowledge Graph Explorer        │ │
+│  │ • Collections│  │  Papers ◄─► Concepts ◄─► Findings        │ │
 │  └──────────────┘  └──────────────────────────────────────────┘ │
 └────────────────────────────┬────────────────────────────────────┘
                              │
@@ -42,30 +41,29 @@ A **local, fully open-source knowledge graph & AI tutor** for researchers, stude
                     │   LangGraph     │
                     │   Agent Loop    │◄──── LangSmith Tracing
                     │  (ReAct Style)  │
-                    └───┬────┬───┬────┘
-                        │    │   │
-              ┌─────────▼┐ ┌▼───▼───────┐ ┌──────────────┐
-              │Web Search│ │ RAG Query  │ │ Graph Query  │
-              │DuckDuckGo│ │ ChromaDB   │ │ Neo4j        │
-              │(opt-in)  │ │ + Docling  │ │ (opt-in)     │
-              └──────────┘ └────────────┘ └──────────────┘
-                        │        │              │
-                    ┌───▼────────▼──────────────▼─┐
-                    │        Ollama LLM            │
-                    │       (Local Model)          │
-                    └──────────────────────────────┘
+                    └─┬─────────────┬─┘
+                      │             │
+              ┌───────▼──┐     ┌────▼────────┐
+              │ RAG Query│     │ Graph Query │
+              │ ChromaDB │     │ Neo4j       │
+              │+ Docling │     │ (opt-in)    │
+              └──────────┘     └─────────────┘
+                      │             │
+                  ┌───▼─────────────▼───┐
+                  │     Ollama LLM      │
+                  │    (Local Model)    │
+                  └─────────────────────┘
 ```
 
 ### Data Flow
 
 1. **User asks a question** in the Streamlit chat
 2. **LangGraph agent** receives the query with conversation history
-3. **Agent decides** whether to use tools (web search, RAG) or answer directly
+3. **Agent decides** whether to use tools (RAG, knowledge graph) or answer directly
 4. If **RAG is enabled** → queries ChromaDB for relevant document chunks
-5. If **Web Search is enabled** → searches DuckDuckGo for current info
-6. If **Knowledge Graph is enabled** → queries Neo4j via safe, intent-based tool (no raw Cypher)
-7. **LLM generates** a comprehensive, Markdown-formatted response
-8. **Response is displayed** in Streamlit and can be saved or exported
+5. If **Knowledge Graph is enabled** → queries Neo4j via safe, intent-based tool (no raw Cypher)
+6. **LLM generates** a comprehensive, Markdown-formatted response
+7. **Response is displayed** in Streamlit and can be saved or exported
 
 ### Ingestion & Identity
 
@@ -127,7 +125,7 @@ Install Ollama from [ollama.com](https://ollama.com/), then pull the required mo
 
 ```bash
 # Main chat model (default — change via OLLAMA_MODEL in .env)
-ollama pull gemma4:e4b        # Default model
+ollama pull granite4:tiny-h        # Default model
 
 # Embedding model (required for RAG — change via OLLAMA_EMBEDDING_MODEL in .env)
 ollama pull qwen3-embedding:4b  # Required only if using RAG
@@ -164,7 +162,7 @@ Create a `.env` file in the project root to override defaults:
 
 ```bash
 # .env (all optional — sensible defaults are built-in)
-OLLAMA_MODEL=gemma4:e4b
+OLLAMA_MODEL=granite4:tiny-h
 OLLAMA_EMBEDDING_MODEL=qwen3-embedding:4b
 ```
 
@@ -241,7 +239,7 @@ loom/
 │   │
 │   ├── tools/
 │   │   ├── __init__.py
-│   │   ├── web_search.py     # DuckDuckGo search tool
+
 │   │   ├── rag_tool.py       # Document query tool factory
 │   │   └── safe_graph_tool.py # Intent-based graph query tool
 │   │
@@ -266,7 +264,7 @@ All settings are managed via environment variables (`.env` file):
 | Variable | Default | Description |
 |---|---|---|
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server URL |
-| `OLLAMA_MODEL` | `gemma4:e4b` | Default chat model |
+| `OLLAMA_MODEL` | `granite4:tiny-h` | Default chat model |
 | `OLLAMA_EMBEDDING_MODEL` | `qwen3-embedding:4b` | Embedding model (for RAG) |
 | `OLLAMA_TEMPERATURE` | `0.1` | Default temperature |
 | `LANGSMITH_API_KEY` | *(empty)* | LangSmith API key (optional) |
@@ -274,7 +272,6 @@ All settings are managed via environment variables (`.env` file):
 | `LANGSMITH_TRACING` | `false` | Enable LangSmith tracing |
 | `CHROMA_PERSIST_DIR` | `./data/chroma_db` | ChromaDB storage path |
 | `OUTPUT_DIR` | `./outputs` | Markdown output directory |
-| `WEB_SEARCH_MAX_RESULTS` | `5` | Max web search results |
 | `RAG_TOP_K` | `5` | Number of chunks to retrieve |
 | `NEO4J_URI` | `neo4j://127.0.0.1:7687` | Neo4j connection URI |
 | `NEO4J_USERNAME` | `neo4j` | Neo4j username |
@@ -304,16 +301,6 @@ Just type a question in the chat:
 > *"How does backpropagation work? Include the math."*
 
 The agent will respond with a comprehensive, structured Markdown answer.
-
-### Using Web Search
-
-1. Toggle **"🌐 Enable Web Search"** in the sidebar
-2. Ask questions that benefit from current information:
-
-> *"What are the latest features in Apache Spark 4.0?"*
-> *"What's new in the 2024 State of Data Engineering survey?"*
-
-The agent decides when to search based on the question. You don't need to explicitly ask it to search.
 
 ### Using RAG (Document Q&A)
 
@@ -460,4 +447,3 @@ This project is open source and available under the [MIT License](LICENSE).
 - [ChromaDB](https://www.trychroma.com/) — Vector database
 - [Neo4j](https://neo4j.com/) — Graph database
 - [Pyvis](https://pyvis.readthedocs.io/) — Interactive network visualization
-- [DuckDuckGo](https://duckduckgo.com/) — Free web search

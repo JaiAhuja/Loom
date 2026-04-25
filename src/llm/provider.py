@@ -7,23 +7,31 @@ _llm_cache: dict[tuple, ChatOllama] = {}
 _embeddings_cache: dict[str, OllamaEmbeddings] = {}
 
 
-def get_llm(model: str = None, temperature: float = None) -> ChatOllama:
-    """Get (or create) a cached ChatOllama LLM instance.
-
-    Args:
-        model: Ollama model name. Defaults to settings.OLLAMA_MODEL.
-        temperature: Sampling temperature. Defaults to settings.OLLAMA_TEMPERATURE.
-    """
+def get_llm(
+    model: str = None, 
+    temperature: float = None,  
+    require_json: bool = False
+) -> ChatOllama:
+    
     resolved_model = model or settings.OLLAMA_MODEL
     resolved_temp = temperature if temperature is not None else settings.OLLAMA_TEMPERATURE
-    key = (resolved_model, resolved_temp)
+    
+    key = (resolved_model, resolved_temp, require_json)
 
     if key not in _llm_cache:
-        _llm_cache[key] = ChatOllama(
-            model=resolved_model,
-            base_url=settings.OLLAMA_BASE_URL,
-            temperature=resolved_temp,
-        )
+        kwargs = {
+            "model": resolved_model,
+            "streaming": True,
+            "base_url": settings.OLLAMA_BASE_URL,
+            "temperature": resolved_temp,
+            "num_ctx": 32768,  # Max context for granite4:tiny-h; adjust if using a different model
+        }
+        
+        if require_json:
+            kwargs["format"] = "json"
+
+        _llm_cache[key] = ChatOllama(**kwargs)
+        
     return _llm_cache[key]
 
 

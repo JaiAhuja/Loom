@@ -24,7 +24,6 @@ class ChatMetadata:
 
     model: str = ""
     temperature: float = 0.0
-    use_web_search: bool = False
     use_rag: bool = False
     use_graph: bool = False
     collection_name: Optional[str] = None

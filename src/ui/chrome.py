@@ -26,14 +26,11 @@ def render_brand() -> None:
 def render_status_bar(
     model: str,
     *,
-    use_web_search: bool = False,
     collection_name: str | None = None,
     paper_filter: str | None = None,
     use_graph: bool = False,
 ) -> None:
     chips = [f'<span class="status-chip">🤖 {escape(model)}</span>']
-    if use_web_search:
-        chips.append('<span class="status-chip">🌐 Web</span>')
     if collection_name:
         chips.append(f'<span class="status-chip">📄 {escape(collection_name)}</span>')
         if paper_filter:

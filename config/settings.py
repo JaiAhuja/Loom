@@ -9,23 +9,20 @@ class Settings(BaseSettings):
 
     # Ollama
     OLLAMA_BASE_URL: str = "http://localhost:11434"
-    OLLAMA_MODEL: str = "qwen3.5:latest"
+    OLLAMA_MODEL: str = "granite4:tiny-h"
     OLLAMA_EMBEDDING_MODEL: str = "qwen3-embedding:4b"
     OLLAMA_TEMPERATURE: float = 0.1
 
     # LangSmith
     LANGCHAIN_PROJECT: str = "Loom"
     LANGSMITH_API_KEY: str = ""
-    LANGSMITH_TRACING: bool = True
+    LANGSMITH_TRACING: bool = False
 
     # ChromaDB
     CHROMA_PERSIST_DIR: str = "./data/chroma_db"
 
     # Output
     OUTPUT_DIR: str = "./outputs"
-
-    # Web Search
-    WEB_SEARCH_MAX_RESULTS: int = 5
 
     # Neo4j
     # NEO4J_DATABASE defaults to None so the driver uses the server's default

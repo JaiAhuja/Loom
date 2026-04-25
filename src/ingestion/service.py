@@ -13,7 +13,6 @@ from typing import TYPE_CHECKING, Callable, Optional
 
 from src.ingestion.identity import (
     DocumentIdentity,
-    build_identity,
     compute_file_hash,
     generate_ingest_id,
     make_document_id,
@@ -24,7 +23,6 @@ if TYPE_CHECKING:
     from src.rag.store import VectorStoreManager
 
 logger = logging.getLogger(__name__)
-
 
 @dataclass
 class FileResult:
@@ -38,7 +36,6 @@ class FileResult:
     error: Optional[str] = None
     # Document identity (populated on successful processing)
     identity: Optional[DocumentIdentity] = None
-
 
 @dataclass
 class IngestionResult:
@@ -55,14 +52,12 @@ class IngestionResult:
     def failed(self) -> int:
         return sum(1 for r in self.file_results if not r.success)
 
-
 # Type alias for the optional progress callback.
 # Signature: (current_step: int, total_steps: int, message: str) -> None
 ProgressCallback = Callable[[int, int, str], None]
 
 # Number of trackable sub-steps per file: hash, PDF→docling, LLM profile, chunk+index.
 _SUB_STEPS = 4
-
 
 class IngestionService:
     """Coordinate PDF ➜ RAG chunks.
@@ -75,11 +70,7 @@ class IngestionService:
         Persists document chunks into ChromaDB.
     """
 
-    def __init__(
-        self,
-        processor: DocumentProcessor,
-        store: VectorStoreManager,
-    ):
+    def __init__(self, processor: DocumentProcessor, store: VectorStoreManager):
         self.processor = processor
         self.store = store
 
@@ -180,16 +171,11 @@ class IngestionService:
                 continue
 
             chunks, raw_result = proc_result
-            content_count = sum(
-                1 for c in chunks if c.metadata.get("chunk_type") == "content"
-            )
+            content_count = sum(1 for c in chunks if c.metadata.get("chunk_type") == "content")
             fr.success = True
             fr.paper_title = raw_result.get("paper_title", file_name)
             fr.content_chunks = content_count
-            fr.has_summary = any(
-                c.metadata.get("chunk_type") == "summary" for c in chunks
-            )
-
+            fr.has_summary = any(c.metadata.get("chunk_type") == "summary" for c in chunks)
             result.file_results.append(fr)
 
         if on_progress:

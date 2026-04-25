@@ -38,7 +38,6 @@ graph_builder = GraphBuilder()
 
 @st.cache_resource(show_spinner=False)
 def _get_compiled_graph(
-    use_web_search: bool,
     use_rag: bool,
     use_graph: bool,
     collection_name: str | None,
@@ -55,7 +54,6 @@ def _get_compiled_graph(
     keeps the driver/store singletons out of the hash.
     """
     return graph_builder.build(
-        use_web_search=use_web_search,
         use_rag=use_rag,
         use_graph=use_graph,
         collection_name=collection_name,
@@ -122,19 +120,6 @@ with st.sidebar:
     # ----- Feature Toggles -----
     st.divider()
     st.subheader("🔧 Features")
-
-    use_web_search = st.toggle(
-        "🌐 Enable Web Search",
-        value=False,
-        help="Allow the agent to search the internet via DuckDuckGo. "
-        "Only enable when you need current information.",
-    )
-
-    if use_web_search:
-        st.info(
-            "💡 Web search is **ON**. The agent can access the internet "
-            "when it determines online info would help."
-        )
 
     use_rag = st.toggle(
         "📄 Enable RAG (Document Q&A)",
@@ -362,7 +347,6 @@ with st.sidebar:
                     metadata=ChatMetadata(
                         model=model,
                         temperature=temperature,
-                        use_web_search=use_web_search,
                         use_rag=use_rag,
                         use_graph=use_graph and neo4j_connected,
                         collection_name=collection_name,
@@ -380,7 +364,6 @@ with st.sidebar:
 # --- Main Chat Interface ---
 render_status_bar(
     model,
-    use_web_search=use_web_search,
     collection_name=collection_name if use_rag else None,
     paper_filter=paper_filter,
     use_graph=use_graph,
@@ -414,7 +397,6 @@ if user_input := st.chat_input("Ask about any concept in DE, DS, or AI..."):
         with st.spinner("Thinking..."):
             try:
                 graph = _get_compiled_graph(
-                    use_web_search=use_web_search,
                     use_rag=use_rag,
                     use_graph=use_graph and neo4j_connected,
                     collection_name=collection_name,

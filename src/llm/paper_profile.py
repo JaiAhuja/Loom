@@ -16,6 +16,7 @@ import re
 from typing import TYPE_CHECKING, Any, Optional
 
 from pydantic import BaseModel, Field
+from langchain_core.prompts import ChatPromptTemplate
 
 from src.domain.taxonomy import canonicalize_domain, domains_as_string
 from src.utils.json_parser import parse_llm_json
@@ -65,41 +66,41 @@ class PaperProfile(BaseModel):
 # pipelines benefit from it without duplication)
 # ---------------------------------------------------------------------------
 
-_SKIP_KEYWORDS = {
-    "reference", "bibliography", "appendix", "acknowledgment",
-    "acknowledgement", "vita", "biograph",
+_STRICT_PRIORITY_KEYWORDS = {
+    # The Gist/Summary
+    "abstract", "introduction", "summary", "synopsis", "executive summary", "highlights", 
+    "in brief", "key points",
+    "results", "findings", "outcomes", "observations", "analysis",
+    "conclusion", "concluding remarks", "conclusions", "summary of findings",
+    "implications", "contributions"
 }
-_PRIORITY_KEYWORDS = {
-    "abstract", "introduction", "conclusion", "summary",
-    "results", "findings", "discussion",
-}
 
-
-def select_key_sections(text: str, budget: int = 12000) -> str:
-    """Pick the most informative sections from a Markdown paper.
-
-    Splits on Markdown headings, skips reference/appendix sections,
-    prioritises abstract/intro/conclusion/results, then fills with
-    remaining sections until *budget* characters are reached.
+def select_key_sections(text: str, budget: int = 75000) -> str:
+    """Strictly picks front matter plus high-signal summary/outcome sections.
+    
+    Excludes high-volume 'filler' like Introduction, Methodology, 
+    Literature Review, and Discussion.
     """
-    if len(text) <= budget:
-        return text
-
     parts = re.split(r"(?=^#{1,3}\s)", text, flags=re.MULTILINE)
+    
+    front_matter: list[str] = []
     prioritised: list[str] = []
-    rest: list[str] = []
+    seen_first_priority = False
 
     for part in parts:
-        header = part.split("\n", 1)[0].lower().strip("# \t")
-        if any(kw in header for kw in _SKIP_KEYWORDS):
+        if not part.strip(): 
             continue
-        if any(kw in header for kw in _PRIORITY_KEYWORDS):
+            
+        header = part.split("\n", 1)[0].lower().strip("# \t")
+        if any(kw in header for kw in _STRICT_PRIORITY_KEYWORDS):
+            seen_first_priority = True
             prioritised.append(part)
         else:
-            rest.append(part)
+            if not seen_first_priority:
+                front_matter.append(part)
 
     selected = ""
-    for section in prioritised + rest:
+    for section in front_matter + prioritised: # Reconstruct: Front matter at the top, then the key sections
         if len(selected) + len(section) <= budget:
             selected += section
         else:
@@ -110,58 +111,68 @@ def select_key_sections(text: str, budget: int = 12000) -> str:
 
     return selected or text[:budget]
 
-
 # ---------------------------------------------------------------------------
 # Extraction
 # ---------------------------------------------------------------------------
 
-_PROMPT_TEMPLATE = """Analyze this research paper/article and extract structured information.
+_PROMPT_TEMPLATE = ChatPromptTemplate.from_messages([
+    (
+        "system",
+        """### ROLE
+You are a Senior Research Analyst. Your goal is to deconstruct academic papers into high-fidelity knowledge graphs.
 
-PAPER TEXT:
+### EXTRACTION RULES
+1. **CONCEPTS (5-15)**: Focus on technical terms, theories, or novel entities. Use snake_case or lowercase.
+2. **METHODS (1-5)**: Identify the 'how'. (e.g., "Randomized Controlled Trial", "Transformer Architecture", "Qualitative Interviews").
+3. **FINDINGS (2-8)**: Each finding must include a 'claim' and the 'evidence_type'. Prefer findings that include statistical results or specific outcomes.
+4. **DOMAIN**: Strictly use one from: {domains}.
+5. **DEPTH**: 'core' is for the primary subject; 'mentions' is for background context.
+
+### OUTPUT INSTRUCTIONS
+- Return ONLY valid JSON.
+- No conversational filler (e.g., "Sure, here is...")
+- If a field is missing, use null (for numbers) or [] (for arrays).
+"""
+    ),
+    (
+        "human",
+        """### INPUT DATA
+File: {file_name}
+Content: 
 ---
 {text}
 ---
 
-SOURCE FILE: {file_name}
+### TASK
+Analyze the text above and populate the following JSON schema. Ensure the 'summary' is a comprehensive 10-15 sentence narrative of the paper's lifecycle.
 
-Return a JSON object with EXACTLY this structure (no other text, just JSON):
 {{
-    "title": "exact paper title",
-    "authors": ["Author Name 1", "Author Name 2"],
-    "year": 2024,
-    "domain": "one category from: {domains}",
-    "summary": "3-5 sentence summary capturing motivation, methodology, findings, and contributions",
+    "internal_analysis": "Briefly list the 3 most important keywords from the paper here before filling the rest",
+    "title": "Full academic title",
+    "authors": [],
+    "year": null,
+    "domain": "",
+    "summary": "",
     "concepts": [
-        {{
-            "name": "lowercase concept name",
-            "description": "one sentence description",
-            "domain": "same categories as above",
-            "depth": "core or mentions"
-        }}
+        {{"name": "", "description": "", "domain": "", "depth": ""}}
     ],
     "methods": [
-        {{"name": "method name", "description": "one sentence description"}}
+        {{"name": "", "description": ""}}
     ],
     "findings": [
-        {{"claim": "specific finding from the paper", "evidence_type": "empirical or theoretical or survey"}}
+        {{"claim": "", "evidence_type": ""}}
     ]
 }}
-
-Rules:
-- Extract 5-15 key concepts (not too many, not too few).
-- Extract 1-5 methods (algorithms, techniques, frameworks used).
-- Extract 2-8 key findings (specific claims, results, conclusions).
-- Use lowercase for concept names for consistency.
-- "depth": "core" if the paper deeply discusses it, "mentions" if just referenced.
-- If year/authors are unknown, use null / empty array.
-- Return ONLY valid JSON, no markdown formatting."""
+"""
+    )
+])
 
 
 def extract_paper_profile(
     llm: Any,
     markdown_text: str,
     file_name: str,
-    budget: int = 12000,
+    budget: int = 75000,
 ) -> Optional[PaperProfile]:
     """Run the single extraction call and return a validated profile.
 
@@ -178,30 +189,24 @@ def extract_paper_profile(
     from langchain_core.messages import HumanMessage, SystemMessage
 
     text = select_key_sections(markdown_text, budget=budget)
-    prompt = _PROMPT_TEMPLATE.format(
-        text=text,
-        file_name=file_name,
-        domains=domains_as_string(),
-    )
-
-    messages = [
-        SystemMessage(content=(
-            "You are a precise academic knowledge extractor. "
-            "Return only valid JSON matching the requested structure."
-        )),
-        HumanMessage(content=prompt),
-    ]
-
+    chain = _PROMPT_TEMPLATE | llm
     try:
-        response = llm.invoke(messages)
+        response = chain.invoke(
+            {
+                "text": text,
+                "file_name": file_name,
+                "domains": domains_as_string()
+            }
+        )
         parsed = parse_llm_json(response.content)
+        
+        if not parsed or "error" in parsed:
+            logger.warning(f"Failed to parse JSON: {parsed.get('error', 'Unknown error')}")
+            return None
     except Exception as exc:
         logger.warning("Paper profile extraction failed: %s", exc)
         return None
-
-    if not isinstance(parsed, dict):
-        return None
-
+    
     # Normalise domains before validation so Pydantic doesn't have to
     parsed["domain"] = canonicalize_domain(parsed.get("domain", ""))
     for c in parsed.get("concepts", []) or []:

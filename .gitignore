@@ -29,10 +29,14 @@ Thumbs.db
 desktop.ini
 
 # Data (keep structure, ignore content)
-data/pdfs/*.pdf
+data/chat_history/*
 data/chroma_db/*
+data/pdfs/*
+data/txt/*
+!data/chat_history/.gitkeep
 !data/chroma_db/.gitkeep
 !data/pdfs/.gitkeep
+!data/txt/.gitkeep
 
 # Outputs (keep structure, ignore content)
 outputs/*.md
@@ -40,6 +44,7 @@ outputs/*.md
 
 # Jupyter
 .ipynb_checkpoints/
+*.ipynb
 
 # Misc
 *.log

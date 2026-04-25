@@ -11,12 +11,11 @@ def test_settings_loads_with_defaults():
     """Settings can be instantiated and exposes expected default values."""
     s = Settings()
     assert s.OLLAMA_BASE_URL == "http://localhost:11434"
-    assert s.OLLAMA_MODEL == "gemma4:e4b"
+    assert s.OLLAMA_MODEL == "granite4:tiny-h"
     assert s.OLLAMA_EMBEDDING_MODEL == "qwen3-embedding:4b"
     assert s.OLLAMA_TEMPERATURE == 0.1
     assert s.CHROMA_PERSIST_DIR == "./data/chroma_db"
     assert s.OUTPUT_DIR == "./outputs"
-    assert s.WEB_SEARCH_MAX_RESULTS == 5
     assert s.NEO4J_URI == "neo4j://127.0.0.1:7687"
     assert s.NEO4J_DATABASE is None
     assert s.RAG_TOP_K == 5
