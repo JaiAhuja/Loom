@@ -30,11 +30,11 @@ A **local, fully open-source knowledge graph & AI tutor** for researchers, stude
 ┌─────────────────────────────────────────────────────────────────┐
 │                        Streamlit UI                             │
 │  ┌──────────────┐  ┌──────────────────────────────────────────┐ │
-│  │   Sidebar     │  │  Page 1: Chat Interface                 │ │
-│  │ • Model cfg   │  │  User ──► Agent ──► Markdown Response   │ │
-│  │ • Toggles     │  │                                          │ │
-│  │ • PDF Upload  │  │  Page 2: Knowledge Graph Explorer       │ │
-│  │ • Collections │  │  Papers ◄─► Concepts ◄─► Findings       │ │
+│  │   Sidebar    │  │  Page 1: Chat Interface                 │ │
+│  │ • Model cfg  │  │  User ──► Agent ──► Markdown Response   │ │
+│  │ • Toggles    │  │                                          │ │
+│  │ • PDF Upload │  │  Page 2: Knowledge Graph Explorer       │ │
+│  │ • Collections│  │  Papers ◄─► Concepts ◄─► Findings       │ │
 │  └──────────────┘  └──────────────────────────────────────────┘ │
 └────────────────────────────┬────────────────────────────────────┘
                              │
