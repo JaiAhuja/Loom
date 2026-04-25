@@ -48,8 +48,8 @@ A **local, fully open-source knowledge graph & AI tutor** for researchers, stude
               │ ChromaDB │     │ Neo4j       │
               │+ Docling │     │ (opt-in)    │
               └──────────┘     └─────────────┘
-                    │               │
-                ┌───▼───────────────▼───┐
+                      │             │
+                ┌─────▼─────────────▼───┐
                 │       Ollama LLM      │
                 │      (Local Model)    │
                 └───────────────────────┘
