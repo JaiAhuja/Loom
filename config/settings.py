@@ -9,7 +9,7 @@ class Settings(BaseSettings):
 
     # Ollama
     OLLAMA_BASE_URL: str = "http://localhost:11434"
-    OLLAMA_MODEL: str = "qwen3.5:latest"
+    OLLAMA_MODEL: str = "granite4:tiny-h"
     OLLAMA_EMBEDDING_MODEL: str = "qwen3-embedding:4b"
     OLLAMA_TEMPERATURE: float = 0.1
 
