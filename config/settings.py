@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     # LangSmith
     LANGCHAIN_PROJECT: str = "Loom"
     LANGSMITH_API_KEY: str = ""
-    LANGSMITH_TRACING: bool = True
+    LANGSMITH_TRACING: bool = False
 
     # ChromaDB
     CHROMA_PERSIST_DIR: str = "./data/chroma_db"

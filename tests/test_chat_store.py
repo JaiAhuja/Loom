@@ -19,7 +19,7 @@ def _msgs():
 
 def test_save_writes_json_with_topic_and_metadata(tmp_path):
     store = ChatStore(directory=str(tmp_path))
-    meta = ChatMetadata(model="gemma4:e4b", temperature=0.2, use_rag=True)
+    meta = ChatMetadata(model="qwen3.5:latest", temperature=0.2, use_rag=True)
 
     path = store.save(_msgs(), metadata=meta)
 
@@ -29,7 +29,7 @@ def test_save_writes_json_with_topic_and_metadata(tmp_path):
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
     assert data["topic"] == "What is attention?"
-    assert data["metadata"]["model"] == "gemma4:e4b"
+    assert data["metadata"]["model"] == "qwen3.5:latest"
     assert data["metadata"]["use_rag"] is True
     assert len(data["messages"]) == 2
 
