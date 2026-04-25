@@ -11,7 +11,7 @@ def test_settings_loads_with_defaults():
     """Settings can be instantiated and exposes expected default values."""
     s = Settings()
     assert s.OLLAMA_BASE_URL == "http://localhost:11434"
-    assert s.OLLAMA_MODEL == "qwen3.5:latest"
+    assert s.OLLAMA_MODEL == "granite4:tiny-h"
     assert s.OLLAMA_EMBEDDING_MODEL == "qwen3-embedding:4b"
     assert s.OLLAMA_TEMPERATURE == 0.1
     assert s.CHROMA_PERSIST_DIR == "./data/chroma_db"

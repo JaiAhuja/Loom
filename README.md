@@ -125,7 +125,7 @@ Install Ollama from [ollama.com](https://ollama.com/), then pull the required mo
 
 ```bash
 # Main chat model (default — change via OLLAMA_MODEL in .env)
-ollama pull qwen3.5:latest        # Default model
+ollama pull granite4:tiny-h        # Default model
 
 # Embedding model (required for RAG — change via OLLAMA_EMBEDDING_MODEL in .env)
 ollama pull qwen3-embedding:4b  # Required only if using RAG
@@ -162,7 +162,7 @@ Create a `.env` file in the project root to override defaults:
 
 ```bash
 # .env (all optional — sensible defaults are built-in)
-OLLAMA_MODEL=qwen3.5:latest
+OLLAMA_MODEL=granite4:tiny-h
 OLLAMA_EMBEDDING_MODEL=qwen3-embedding:4b
 ```
 
@@ -264,7 +264,7 @@ All settings are managed via environment variables (`.env` file):
 | Variable | Default | Description |
 |---|---|---|
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server URL |
-| `OLLAMA_MODEL` | `qwen3.5:latest` | Default chat model |
+| `OLLAMA_MODEL` | `granite4:tiny-h` | Default chat model |
 | `OLLAMA_EMBEDDING_MODEL` | `qwen3-embedding:4b` | Embedding model (for RAG) |
 | `OLLAMA_TEMPERATURE` | `0.1` | Default temperature |
 | `LANGSMITH_API_KEY` | *(empty)* | LangSmith API key (optional) |

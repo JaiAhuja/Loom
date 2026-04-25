@@ -16,6 +16,7 @@ import re
 from typing import TYPE_CHECKING, Any, Optional
 
 from pydantic import BaseModel, Field
+from langchain_core.prompts import ChatPromptTemplate
 
 from src.domain.taxonomy import canonicalize_domain, domains_as_string
 from src.utils.json_parser import parse_llm_json
@@ -114,16 +115,22 @@ def select_key_sections(text: str, budget: int = 15000) -> str:
 # Extraction
 # ---------------------------------------------------------------------------
 
-_PROMPT_TEMPLATE = """Analyze this research paper/article and extract structured information.
+_PROMPT_TEMPLATE = ChatPromptTemplate.from_messages([
+    (
+        "system",
+        """You are a precise academic knowledge extractor. 
+Your task is to analyze research papers and extract structured information.
 
-PAPER TEXT:
----
-{text}
----
+RULES:
+- Extract 5-15 key concepts (not too many, not too few).
+- Extract 1-5 methods (algorithms, techniques, frameworks used).
+- Extract 2-8 key findings (specific claims, results, conclusions).
+- Use lowercase for concept names for consistency.
+- For concept 'depth': use "core" if the paper deeply discusses it, or "mentions" if just referenced.
+- If year/authors are unknown, use null or an empty array.
+- You MUST return ONLY a valid JSON object. No markdown formatting, no explanations.
 
-SOURCE FILE: {file_name}
-
-Return a JSON object with EXACTLY this structure (no other text, just JSON):
+EXPECTED JSON SCHEMA:
 {{
     "title": "exact paper title",
     "authors": ["Author Name 1", "Author Name 2"],
@@ -144,23 +151,27 @@ Return a JSON object with EXACTLY this structure (no other text, just JSON):
     "findings": [
         {{"claim": "specific finding from the paper", "evidence_type": "empirical or theoretical or survey"}}
     ]
-}}
+}}"""
+    ),
+    (
+        "human",
+        """Extract the profile for the following paper.
 
-Rules:
-- Extract 5-15 key concepts (not too many, not too few).
-- Extract 1-5 methods (algorithms, techniques, frameworks used).
-- Extract 2-8 key findings (specific claims, results, conclusions).
-- Use lowercase for concept names for consistency.
-- "depth": "core" if the paper deeply discusses it, "mentions" if just referenced.
-- If year/authors are unknown, use null / empty array.
-- Return ONLY valid JSON, no markdown formatting."""
+SOURCE FILE: {file_name}
+
+PAPER TEXT:
+---
+{text}
+---"""
+    )
+])
 
 
 def extract_paper_profile(
     llm: Any,
     markdown_text: str,
     file_name: str,
-    budget: int = 12000,
+    budget: int = 15000,
 ) -> Optional[PaperProfile]:
     """Run the single extraction call and return a validated profile.
 
@@ -177,30 +188,24 @@ def extract_paper_profile(
     from langchain_core.messages import HumanMessage, SystemMessage
 
     text = select_key_sections(markdown_text, budget=budget)
-    prompt = _PROMPT_TEMPLATE.format(
-        text=text,
-        file_name=file_name,
-        domains=domains_as_string(),
-    )
-
-    messages = [
-        SystemMessage(content=(
-            "You are a precise academic knowledge extractor. "
-            "Return only valid JSON matching the requested structure."
-        )),
-        HumanMessage(content=prompt),
-    ]
-
+    chain = _PROMPT_TEMPLATE | llm
     try:
-        response = llm.invoke(messages)
+        response = chain.invoke(
+            {
+                "text": text,
+                "file_name": file_name,
+                "domains": domains_as_string()
+            }
+        )
         parsed = parse_llm_json(response.content)
+        
+        if not parsed or "error" in parsed:
+            logger.warning(f"Failed to parse JSON: {parsed.get('error', 'Unknown error')}")
+            return None
     except Exception as exc:
         logger.warning("Paper profile extraction failed: %s", exc)
         return None
-
-    if not isinstance(parsed, dict):
-        return None
-
+    
     # Normalise domains before validation so Pydantic doesn't have to
     parsed["domain"] = canonicalize_domain(parsed.get("domain", ""))
     for c in parsed.get("concepts", []) or []:
