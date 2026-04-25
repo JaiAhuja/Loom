@@ -82,8 +82,6 @@ def select_key_sections(text: str, budget: int = 12000) -> str:
     prioritises abstract/intro/conclusion/results, then fills with
     remaining sections until *budget* characters are reached.
     """
-    if len(text) <= budget:
-        return text
 
     parts = re.split(r"(?=^#{1,3}\s)", text, flags=re.MULTILINE)
     prioritised: list[str] = []
