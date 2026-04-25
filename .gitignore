@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual Environment
+venv/
+.venv/
+env/
+ENV/
+
+# Environment Variables
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Data (keep structure, ignore content)
+data/pdfs/*.pdf
+data/chroma_db/*
+!data/chroma_db/.gitkeep
+!data/pdfs/.gitkeep
+
+# Outputs (keep structure, ignore content)
+outputs/*.md
+!outputs/.gitkeep
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Misc
+*.log
+*.tmp

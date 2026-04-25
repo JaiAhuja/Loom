@@ -1,0 +1,176 @@
+---
+title: Loom — Full Architecture
+---
+flowchart TB
+    %% ─────────────────────────────────────────
+    %% EXTERNAL SERVICES
+    %% ─────────────────────────────────────────
+    subgraph EXT["☁️ External Services"]
+        direction LR
+        OLLAMA["🦙 Ollama<br/><i>localhost:11434</i><br/>LLM inference &amp; embeddings"]
+        NEO4J["🔵 Neo4j<br/><i>neo4j://127.0.0.1:7687</i><br/>Knowledge graph DB"]
+        CHROMADB["🟢 ChromaDB<br/><i>./data/chroma_db</i><br/>Vector store"]
+        DDG["🦆 DuckDuckGo<br/><i>Web search API</i>"]
+        LANGSMITH["📊 LangSmith<br/><i>Optional tracing</i>"]
+    end
+
+    %% ─────────────────────────────────────────
+    %% UI LAYER
+    %% ─────────────────────────────────────────
+    subgraph UI["🖥️ Streamlit UI Layer"]
+        direction LR
+        APP["<b>app.py</b><br/>Chat page<br/>• Sidebar toggles<br/>• PDF upload<br/>• Agent invocation<br/>• Auto-save responses"]
+        KGPAGE["<b>pages/2_Knowledge_Graph.py</b><br/>KG Explorer page<br/>• Graph View (pyvis)<br/>• Paper Explorer<br/>• Concept Explorer<br/>• Cross-Paper Relations"]
+    end
+
+    %% ─────────────────────────────────────────
+    %% CONFIG
+    %% ─────────────────────────────────────────
+    subgraph CFG["⚙️ Configuration"]
+        SETTINGS["<b>config/settings.py</b><br/>Settings (Pydantic)<br/>• Ollama params<br/>• Neo4j creds<br/>• ChromaDB path<br/>• RAG tuning knobs<br/>• LangSmith config"]
+    end
+
+    %% ─────────────────────────────────────────
+    %% INGESTION PIPELINE
+    %% ─────────────────────────────────────────
+    subgraph INGEST["📥 Ingestion Pipeline"]
+        direction TB
+        IDENTITY["<b>ingestion/identity.py</b><br/>DocumentIdentity<br/>• MD5 content hash<br/>• Content-addressed save<br/>• Deterministic doc IDs"]
+        INGSVC["<b>ingestion/service.py</b><br/>IngestionService<br/>• Orchestrates full pipeline<br/>• Dedup via content hash<br/>• Progress callbacks<br/>• Per-file result tracking"]
+    end
+
+    %% ─────────────────────────────────────────
+    %% RAG PIPELINE
+    %% ─────────────────────────────────────────
+    subgraph RAG["📄 RAG Pipeline"]
+        direction TB
+        PROCESSOR["<b>rag/processor.py</b><br/>DocumentProcessor<br/>• PDF → Markdown (Docling)<br/>• Hybrid chunking<br/>• Domain classification<br/>• Paper summarisation<br/>• Deterministic chunk IDs"]
+        STORE["<b>rag/store.py</b><br/>VectorStoreManager<br/>• Upsert with dedup IDs<br/>• Filtered retrieval<br/>• Collection management<br/>• Paper listing"]
+    end
+
+    %% ─────────────────────────────────────────
+    %% LLM PROVIDER
+    %% ─────────────────────────────────────────
+    subgraph LLM["🧠 LLM Provider"]
+        PROVIDER["<b>llm/provider.py</b><br/>get_llm() → ChatOllama<br/>get_embeddings() → OllamaEmbeddings<br/>• Cached by model+temp"]
+    end
+
+    %% ─────────────────────────────────────────
+    %% KNOWLEDGE GRAPH LAYER
+    %% ─────────────────────────────────────────
+    subgraph KG["🔗 Knowledge Graph Layer"]
+        direction TB
+        CONN["<b>graph_db/connection.py</b><br/>Neo4jConnection<br/>• Lazy driver init<br/>• execute_read()<br/>• execute_write()<br/>• execute_write_tx()"]
+        SCHEMA["<b>graph_db/schema.py</b><br/>Schema constants<br/>• Node labels: Paper, Concept,<br/>  Method, Finding, Author<br/>• Rel types: DISCUSSES,<br/>  SUPPORTS, CONTRADICTS, etc.<br/>• initialize_schema()"]
+        QUERIES["<b>graph_db/queries.py</b><br/>KnowledgeGraphQueries<br/>• get_all_papers()<br/>• get_paper_details()<br/>• get_shared_concepts()<br/>• get_graph_stats()<br/>• get_graph_for_visualization()<br/>• Contradiction/support/extend queries"]
+        SERVICE["<b>graph_db/service.py</b><br/>GraphQueryService<br/>• 9 named intents<br/>• Parameter validation<br/>• No free-form Cypher"]
+    end
+
+    %% ─────────────────────────────────────────
+    %% LANGGRAPH AGENT
+    %% ─────────────────────────────────────────
+    subgraph AGENT["🤖 LangGraph Agent"]
+        direction TB
+        STATE["<b>graph/state.py</b><br/>AgentState<br/>• messages list<br/>• add_messages reducer"]
+        NODES["<b>graph/nodes.py</b><br/>Agent node &amp; routing<br/>• build_system_prompt()<br/>• create_agent_node()<br/>• should_continue()<br/>• Conditional tool prompts"]
+        BUILDER["<b>graph/builder.py</b><br/>GraphBuilder<br/>• Dynamic tool assembly<br/>• ReAct agent loop<br/>• Feature-flag gating<br/>• Compiles StateGraph"]
+    end
+
+    %% ─────────────────────────────────────────
+    %% TOOLS
+    %% ─────────────────────────────────────────
+    subgraph TOOLS["🔧 Agent Tools"]
+        direction LR
+        RAGTOOL["<b>tools/rag_tool.py</b><br/>query_documents<br/>• Collection-bound retriever<br/>• Optional paper filter<br/>• Top-K chunk formatting"]
+        WEBTOOL["<b>tools/web_search.py</b><br/>web_search<br/>• DuckDuckGo SDK<br/>• Title/URL/snippet output"]
+        SAFEGRAPH["<b>tools/safe_graph_tool.py</b><br/>query_knowledge_graph<br/>• Intent-based dispatch<br/>• JSON param parsing<br/>• Human-readable formatting"]
+    end
+
+    %% ─────────────────────────────────────────
+    %% UTILITIES
+    %% ─────────────────────────────────────────
+    subgraph UTIL["🛠️ Utilities"]
+        MDHANDLER["<b>utils/markdown_handler.py</b><br/>MarkdownHandler<br/>• Save responses as .md<br/>• List/load saved files<br/>• Topic extraction"]
+        JSONPARSER["<b>utils/json_parser.py</b><br/>parse_llm_json()<br/>• Extract JSON from LLM output<br/>• Handles code-block wrapping"]
+    end
+
+    %% ═══════════════════════════════════════
+    %% CONNECTIONS
+    %% ═══════════════════════════════════════
+
+    %% UI → Ingestion
+    APP -->|"PDF upload"| INGSVC
+    INGSVC --> IDENTITY
+    INGSVC -->|"process PDF"| PROCESSOR
+    INGSVC -->|"store chunks"| STORE
+
+    %% UI → Agent
+    APP -->|"user question"| BUILDER
+    BUILDER --> NODES
+    BUILDER --> STATE
+    NODES -->|"bind tools + invoke LLM"| PROVIDER
+
+    %% Agent ↔ Tools
+    BUILDER -->|"assemble tools"| RAGTOOL
+    BUILDER -->|"assemble tools"| WEBTOOL
+    BUILDER -->|"assemble tools"| SAFEGRAPH
+
+    %% Tools → backends
+    RAGTOOL -->|"retrieve chunks"| STORE
+    WEBTOOL -->|"search web"| DDG
+    SAFEGRAPH -->|"dispatch intent"| SERVICE
+    SERVICE --> QUERIES
+    QUERIES --> CONN
+
+    %% KG page → queries
+    KGPAGE -->|"read-only queries"| QUERIES
+
+    %% RAG internals
+    PROCESSOR -->|"LLM classify + summarise"| PROVIDER
+    STORE -->|"embed chunks"| PROVIDER
+
+    %% KG internals
+    SCHEMA -->|"create constraints"| CONN
+
+    %% External service connections
+    PROVIDER -->|"inference + embeddings"| OLLAMA
+    CONN -->|"Bolt protocol"| NEO4J
+    STORE -->|"persist vectors"| CHROMADB
+
+    %% Config
+    SETTINGS -.->|"settings singleton"| APP
+    SETTINGS -.->|"settings singleton"| PROVIDER
+    SETTINGS -.->|"settings singleton"| STORE
+    SETTINGS -.->|"settings singleton"| CONN
+
+    %% Utils
+    APP -->|"save/load markdown"| MDHANDLER
+    PROCESSOR -->|"parse LLM JSON"| JSONPARSER
+
+    %% LangSmith
+    SETTINGS -.->|"optional tracing"| LANGSMITH
+
+    %% ═══════════════════════════════════════
+    %% STYLING
+    %% ═══════════════════════════════════════
+    classDef extService fill:#2d2d2d,stroke:#888,color:#fff
+    classDef uiNode fill:#1a73e8,stroke:#1557b0,color:#fff
+    classDef cfgNode fill:#6d4c41,stroke:#4e342e,color:#fff
+    classDef ingestNode fill:#e65100,stroke:#bf360c,color:#fff
+    classDef ragNode fill:#2e7d32,stroke:#1b5e20,color:#fff
+    classDef llmNode fill:#7b1fa2,stroke:#4a148c,color:#fff
+    classDef kgNode fill:#0277bd,stroke:#01579b,color:#fff
+    classDef agentNode fill:#c62828,stroke:#b71c1c,color:#fff
+    classDef toolNode fill:#f9a825,stroke:#f57f17,color:#000
+    classDef utilNode fill:#546e7a,stroke:#37474f,color:#fff
+
+    class OLLAMA,NEO4J,CHROMADB,DDG,LANGSMITH extService
+    class APP,KGPAGE uiNode
+    class SETTINGS cfgNode
+    class IDENTITY,INGSVC ingestNode
+    class PROCESSOR,STORE ragNode
+    class PROVIDER llmNode
+    class CONN,SCHEMA,QUERIES,SERVICE kgNode
+    class STATE,NODES,BUILDER agentNode
+    class RAGTOOL,WEBTOOL,SAFEGRAPH toolNode
+    class MDHANDLER,JSONPARSER utilNode

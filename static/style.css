@@ -1,0 +1,118 @@
+/* ── Global ── */
+.stChatMessage { max-width: 100%; }
+.stChatMessage pre { border-radius: 8px; padding: 1rem; }
+.stChatMessage hr { margin: 1.5rem 0; border-color: rgba(128,128,128,0.2); }
+.stChatMessage table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+.stChatMessage th, .stChatMessage td {
+    border: 1px solid rgba(128,128,128,0.3); padding: 0.5rem 0.75rem; text-align: left;
+}
+.stChatMessage th { font-weight: 600; }
+
+/* ── Hero / Welcome ── */
+.hero-container {
+    text-align: center;
+    padding: 2.5rem 1rem 1rem;
+}
+.hero-icon {
+    font-size: 4rem;
+    margin-bottom: 0.25rem;
+    animation: float 3s ease-in-out infinite;
+}
+@keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+}
+.hero-title {
+    font-size: 2.4rem;
+    font-weight: 800;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 0.3rem;
+}
+.hero-subtitle {
+    font-size: 1.05rem;
+    color: #888;
+    margin-bottom: 2rem;
+}
+
+/* ── Feature cards ── */
+.feature-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+    margin: 0 auto 2rem;
+    max-width: 780px;
+}
+.feature-card {
+    background: rgba(128,128,128,0.06);
+    border: 1px solid rgba(128,128,128,0.12);
+    border-radius: 12px;
+    padding: 1.3rem 1rem;
+    text-align: center;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+.feature-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.08);
+}
+.feature-card .card-icon { font-size: 1.8rem; margin-bottom: 0.4rem; }
+.feature-card .card-title { font-weight: 700; font-size: 0.95rem; margin-bottom: 0.25rem; }
+.feature-card .card-desc  { font-size: 0.8rem; color: #999; line-height: 1.35; }
+
+/* ── Quick-start pills ── */
+.quick-start { text-align: center; margin-top: 0.5rem; }
+.quick-start p { font-size: 0.85rem; color: #888; margin-bottom: 0.6rem; }
+.pill-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem; }
+.pill {
+    display: inline-block;
+    background: rgba(102,126,234,0.10);
+    border: 1px solid rgba(102,126,234,0.25);
+    color: #667eea;
+    border-radius: 20px;
+    padding: 0.4rem 1rem;
+    font-size: 0.82rem;
+    cursor: default;
+    transition: background 0.15s;
+}
+.pill:hover { background: rgba(102,126,234,0.18); }
+
+/* ── Status bar ── */
+.status-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+    padding: 0.55rem 1rem;
+    background: rgba(128,128,128,0.05);
+    border: 1px solid rgba(128,128,128,0.1);
+    border-radius: 8px;
+    margin-bottom: 1rem;
+    font-size: 0.82rem;
+}
+.status-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    background: rgba(128,128,128,0.08);
+    padding: 0.2rem 0.65rem;
+    border-radius: 12px;
+    font-size: 0.78rem;
+}
+
+/* ── Sidebar polish ── */
+section[data-testid="stSidebar"] .stMarkdown h1 {
+    font-size: 1.3rem !important;
+}
+.sidebar-brand {
+    text-align: center;
+    padding: 0.5rem 0 0.3rem;
+}
+.sidebar-brand .brand-icon { font-size: 2.2rem; }
+.sidebar-brand .brand-name {
+    font-size: 1.25rem; font-weight: 800;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+.sidebar-brand .brand-tag { font-size: 0.78rem; color: #999; }
