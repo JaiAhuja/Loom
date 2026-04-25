@@ -160,7 +160,7 @@ flowchart TB
     classDef toolNode fill:#f9a825,stroke:#f57f17,color:#000
     classDef utilNode fill:#546e7a,stroke:#37474f,color:#fff
 
-    class OLLAMA,NEO4J,CHROMADB,DDG,LANGSMITH extService
+    class OLLAMA,NEO4J,CHROMADB,LANGSMITH extService
     class APP,KGPAGE uiNode
     class SETTINGS cfgNode
     class IDENTITY,INGSVC ingestNode
@@ -168,5 +168,5 @@ flowchart TB
     class PROVIDER llmNode
     class CONN,SCHEMA,QUERIES,SERVICE kgNode
     class STATE,NODES,BUILDER agentNode
-    class RAGTOOL,WEBTOOL,SAFEGRAPH toolNode
+    class RAGTOOL,SAFEGRAPH toolNode
     class MDHANDLER,JSONPARSER utilNode
