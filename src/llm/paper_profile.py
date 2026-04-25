@@ -75,7 +75,7 @@ _STRICT_PRIORITY_KEYWORDS = {
     "implications", "contributions"
 }
 
-def select_key_sections(text: str, budget: int = 15000) -> str:
+def select_key_sections(text: str, budget: int = 75000) -> str:
     """Strictly picks front matter plus high-signal summary/outcome sections.
     
     Excludes high-volume 'filler' like Introduction, Methodology, 
@@ -171,7 +171,7 @@ def extract_paper_profile(
     llm: Any,
     markdown_text: str,
     file_name: str,
-    budget: int = 15000,
+    budget: int = 75000,
 ) -> Optional[PaperProfile]:
     """Run the single extraction call and return a validated profile.
 
