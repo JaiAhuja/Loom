@@ -10,7 +10,6 @@ flowchart TB
         OLLAMA["🦙 Ollama<br/><i>localhost:11434</i><br/>LLM inference &amp; embeddings"]
         NEO4J["🔵 Neo4j<br/><i>neo4j://127.0.0.1:7687</i><br/>Knowledge graph DB"]
         CHROMADB["🟢 ChromaDB<br/><i>./data/chroma_db</i><br/>Vector store"]
-        DDG["🦆 DuckDuckGo<br/><i>Web search API</i>"]
         LANGSMITH["📊 LangSmith<br/><i>Optional tracing</i>"]
     end
 
@@ -82,7 +81,6 @@ flowchart TB
     subgraph TOOLS["🔧 Agent Tools"]
         direction LR
         RAGTOOL["<b>tools/rag_tool.py</b><br/>query_documents<br/>• Collection-bound retriever<br/>• Optional paper filter<br/>• Top-K chunk formatting"]
-        WEBTOOL["<b>tools/web_search.py</b><br/>web_search<br/>• DuckDuckGo SDK<br/>• Title/URL/snippet output"]
         SAFEGRAPH["<b>tools/safe_graph_tool.py</b><br/>query_knowledge_graph<br/>• Intent-based dispatch<br/>• JSON param parsing<br/>• Human-readable formatting"]
     end
 
@@ -112,12 +110,10 @@ flowchart TB
 
     %% Agent ↔ Tools
     BUILDER -->|"assemble tools"| RAGTOOL
-    BUILDER -->|"assemble tools"| WEBTOOL
     BUILDER -->|"assemble tools"| SAFEGRAPH
 
     %% Tools → backends
     RAGTOOL -->|"retrieve chunks"| STORE
-    WEBTOOL -->|"search web"| DDG
     SAFEGRAPH -->|"dispatch intent"| SERVICE
     SERVICE --> QUERIES
     QUERIES --> CONN

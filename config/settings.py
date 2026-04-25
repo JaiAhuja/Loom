@@ -24,9 +24,6 @@ class Settings(BaseSettings):
     # Output
     OUTPUT_DIR: str = "./outputs"
 
-    # Web Search
-    WEB_SEARCH_MAX_RESULTS: int = 5
-
     # Neo4j
     # NEO4J_DATABASE defaults to None so the driver uses the server's default
     # database (``neo4j`` for Community edition).  Set it explicitly in .env
