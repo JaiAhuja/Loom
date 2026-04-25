@@ -24,6 +24,7 @@ def get_llm(
             "streaming": True,
             "base_url": settings.OLLAMA_BASE_URL,
             "temperature": resolved_temp,
+            "num_ctx": 32768,  # Max context for granite4:tiny-h; adjust if using a different model
         }
         
         if require_json:

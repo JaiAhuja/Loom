@@ -6,7 +6,7 @@ from typing import Callable, Optional
 
 from langchain_core.documents import Document
 
-from src.llm import PaperProfile, extract_paper_profile, get_llm
+from src.llm import PaperProfile, extract_paper_profile, get_llm, get_embeddings
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,6 @@ class DocumentProcessor:
     """
 
     def __init__(self):
-        # Lazy-load heavy dependencies
         self._converter = None
         self._chunker = None
 
@@ -50,10 +49,48 @@ class DocumentProcessor:
         """Lazy-initialize the Docling HybridChunker."""
         if self._chunker is None:
             from docling.chunking import HybridChunker
+            from docling_core.transforms.chunker.tokenizer.base import BaseTokenizer
+            from transformers import AutoTokenizer
 
+            hf_tokenizer = AutoTokenizer.from_pretrained(
+                "./granite_tokenizer",
+                trust_remote_code=True,
+                local_files_only=True
+                )
+            
+            class LocalGraniteTokenizer(BaseTokenizer):
+                max_tokens: int = 4096
+                _hf_tokenizer: any = None
+
+                def __init__(self, hf_tokenizer):
+                    super().__init__(max_tokens=2048)
+                    self._hf_tokenizer = hf_tokenizer
+
+                def count_tokens(self, text: str) -> int:
+                    """Required: Return the integer count of tokens."""
+                    return len(self._hf_tokenizer.encode(text, add_special_tokens=False))
+
+                def get_max_tokens(self) -> int:
+                    """Required: Return the max sequence length."""
+                    return self.max_tokens
+
+                def get_tokenizer(self) -> any:
+                    """Required: Return the underlying tokenizer object."""
+                    return self._hf_tokenizer
+
+                def __call__(self, text: str):
+                    return self._hf_tokenizer(text, return_tensors="pt", add_special_tokens=False)
+
+                def encode(self, text: str) -> list[int]:
+                    return self._hf_tokenizer.encode(text, add_special_tokens=False)
+
+            docling_tokenizer = LocalGraniteTokenizer(hf_tokenizer)
+            
             self._chunker = HybridChunker(
+                tokenizer=docling_tokenizer,
                 merge_peers=True,
-            )
+                max_tokens=8192
+)
         return self._chunker
 
     @property
@@ -61,7 +98,6 @@ class DocumentProcessor:
         """Lazy-initialize the Docling DocumentConverter."""
         if self._converter is None:
             from docling.document_converter import DocumentConverter
-
             self._converter = DocumentConverter()
         return self._converter
 
@@ -150,7 +186,7 @@ class DocumentProcessor:
         profile: PaperProfile | None = None
         if model:
             _step(f"Extracting paper profile with LLM ({model})...")
-            llm = get_llm(model=model, temperature=0.1)
+            llm = get_llm(model=model, temperature=0.1, require_json=True)
             profile = extract_paper_profile(llm, markdown_text, file_name)
             title_preview = profile.title if profile else "n/a"
             print(f"  [processor] Profile extracted — title: '{title_preview}'", flush=True)

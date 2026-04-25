@@ -68,7 +68,7 @@ class PaperProfile(BaseModel):
 
 _STRICT_PRIORITY_KEYWORDS = {
     # The Gist/Summary
-    "abstract", "summary", "synopsis", "executive summary", "highlights", 
+    "abstract", "introduction", "summary", "synopsis", "executive summary", "highlights", 
     "in brief", "key points",
     "results", "findings", "outcomes", "observations", "analysis",
     "conclusion", "concluding remarks", "conclusions", "summary of findings",
@@ -118,51 +118,52 @@ def select_key_sections(text: str, budget: int = 75000) -> str:
 _PROMPT_TEMPLATE = ChatPromptTemplate.from_messages([
     (
         "system",
-        """You are a precise academic knowledge extractor. 
-Your task is to analyze research papers and extract structured information.
+        """### ROLE
+You are a Senior Research Analyst. Your goal is to deconstruct academic papers into high-fidelity knowledge graphs.
 
-RULES:
-- Extract 5-15 key concepts (not too many, not too few).
-- Extract 1-5 methods (algorithms, techniques, frameworks used).
-- Extract 2-8 key findings (specific claims, results, conclusions).
-- Use lowercase for concept names for consistency.
-- For concept 'depth': use "core" if the paper deeply discusses it, or "mentions" if just referenced.
-- If year/authors are unknown, use null or an empty array.
-- You MUST return ONLY a valid JSON object. No markdown formatting, no explanations.
+### EXTRACTION RULES
+1. **CONCEPTS (5-15)**: Focus on technical terms, theories, or novel entities. Use snake_case or lowercase.
+2. **METHODS (1-5)**: Identify the 'how'. (e.g., "Randomized Controlled Trial", "Transformer Architecture", "Qualitative Interviews").
+3. **FINDINGS (2-8)**: Each finding must include a 'claim' and the 'evidence_type'. Prefer findings that include statistical results or specific outcomes.
+4. **DOMAIN**: Strictly use one from: {domains}.
+5. **DEPTH**: 'core' is for the primary subject; 'mentions' is for background context.
 
-EXPECTED JSON SCHEMA:
-{{
-    "title": "exact paper title",
-    "authors": ["Author Name 1", "Author Name 2"],
-    "year": 2024,
-    "domain": "one category from: {domains}",
-    "summary": "3-5 sentence summary capturing motivation, methodology, findings, and contributions",
-    "concepts": [
-        {{
-            "name": "lowercase concept name",
-            "description": "one sentence description",
-            "domain": "same categories as above",
-            "depth": "core or mentions"
-        }}
-    ],
-    "methods": [
-        {{"name": "method name", "description": "one sentence description"}}
-    ],
-    "findings": [
-        {{"claim": "specific finding from the paper", "evidence_type": "empirical or theoretical or survey"}}
-    ]
-}}"""
+### OUTPUT INSTRUCTIONS
+- Return ONLY valid JSON.
+- No conversational filler (e.g., "Sure, here is...")
+- If a field is missing, use null (for numbers) or [] (for arrays).
+"""
     ),
     (
         "human",
-        """Extract the profile for the following paper.
-
-SOURCE FILE: {file_name}
-
-PAPER TEXT:
+        """### INPUT DATA
+File: {file_name}
+Content: 
 ---
 {text}
----"""
+---
+
+### TASK
+Analyze the text above and populate the following JSON schema. Ensure the 'summary' is a comprehensive 10-15 sentence narrative of the paper's lifecycle.
+
+{{
+    "internal_analysis": "Briefly list the 3 most important keywords from the paper here before filling the rest",
+    "title": "Full academic title",
+    "authors": [],
+    "year": null,
+    "domain": "",
+    "summary": "",
+    "concepts": [
+        {{"name": "", "description": "", "domain": "", "depth": ""}}
+    ],
+    "methods": [
+        {{"name": "", "description": ""}}
+    ],
+    "findings": [
+        {{"claim": "", "evidence_type": ""}}
+    ]
+}}
+"""
     )
 ])
 
