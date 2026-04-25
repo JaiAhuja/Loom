@@ -49,10 +49,10 @@ A **local, fully open-source knowledge graph & AI tutor** for researchers, stude
               │+ Docling │     │ (opt-in)    │
               └──────────┘     └─────────────┘
                       │             │
-                ┌─────▼─────────────▼───┐
-                │       Ollama LLM      │
-                │      (Local Model)    │
-                └───────────────────────┘
+                  ┌───▼─────────────▼───┐
+                  │     Ollama LLM      │
+                  │    (Local Model)    │
+                  └─────────────────────┘
 ```
 
 ### Data Flow
