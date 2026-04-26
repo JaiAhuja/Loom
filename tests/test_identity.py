@@ -44,7 +44,7 @@ def test_compute_file_hash(tmp_path):
 
 def test_make_document_id():
     sha = "abc123"
-    assert make_document_id(sha) == "md5:abc123"
+    assert make_document_id("Self-Supervised Learning.pdf") == "Self-Supervised Learning"
 
 
 # ---------------------------------------------------------------------------
@@ -76,29 +76,34 @@ def test_build_identity():
 
     assert isinstance(identity, DocumentIdentity)
     assert identity.source_md5 == hash_bytes(data)
-    assert identity.document_id == f"md5:{identity.source_md5}"
+    assert identity.document_id == os.path.splitext(identity.original_filename)[0]
     assert identity.ingest_id == iid
     assert identity.original_filename == "paper.pdf"
 
 
-def test_build_identity_same_content_same_document_id():
-    """Two uploads of the same bytes yield the same document_id."""
-    data = b"identical content"
-    id1 = build_identity(data, "a.pdf", generate_ingest_id())
-    id2 = build_identity(data, "b.pdf", generate_ingest_id())
-    assert id1.document_id == id2.document_id
-    assert id1.source_md5 == id2.source_md5
-    # But ingest_ids differ
+def test_build_identity_same_filename_same_document_id():
+    """Two uploads of the same filename yield the same document_id."""
+    data1 = b"content A"
+    data2 = b"content B"
+    id1 = build_identity(data1, "paper.pdf", generate_ingest_id())
+    id2 = build_identity(data2, "paper.pdf", generate_ingest_id())
+    # Same filename → same document_id
+    assert id1.document_id == id2.document_id == "paper"
+    # But source_md5 and ingest_ids differ (file content and ingest run differ)
+    assert id1.source_md5 != id2.source_md5
     assert id1.ingest_id != id2.ingest_id
 
 
-def test_build_identity_different_content_different_document_id():
-    data1 = b"content A"
-    data2 = b"content B"
+def test_build_identity_different_filename_different_document_id():
+    """Different filenames yield different document_ids."""
+    data = b"identical content"
     iid = generate_ingest_id()
-    id1 = build_identity(data1, "a.pdf", iid)
-    id2 = build_identity(data2, "b.pdf", iid)
+    id1 = build_identity(data, "paper_a.pdf", iid)
+    id2 = build_identity(data, "paper_b.pdf", iid)
+    # Different filename → different document_id
     assert id1.document_id != id2.document_id
+    # But source_md5 is the same (same content)
+    assert id1.source_md5 == id2.source_md5
 
 
 # ---------------------------------------------------------------------------

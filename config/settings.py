@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     # NEO4J_DATABASE defaults to None so the driver uses the server's default
     # database (``neo4j`` for Community edition).  Set it explicitly in .env
     # only if you are using Enterprise edition with a named database.
-    NEO4J_URI: str = "neo4j://[local_instance_id]:7687"
+    NEO4J_URI: str = "neo4j://127.0.0.1:7687"
     NEO4J_USERNAME: str = "neo4j"
     NEO4J_PASSWORD: str = "Loom-Weave-Threads"
     NEO4J_DATABASE: Optional[str] = None

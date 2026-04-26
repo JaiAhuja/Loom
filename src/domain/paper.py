@@ -2,10 +2,11 @@
 
 A single representation of a paper used across the RAG retriever, the
 knowledge graph explorer, and the UI listing.  The canonical key is
-``document_id`` (``md5:<hex>``), the content-addressed MD5 of the
-uploaded file.  ``title`` is a human-readable display property that may
-differ between the filename-derived name (legacy RAG) and the LLM-extracted
-title (KG); both sides should key on ``document_id`` for joins.
+``document_id`` (derived from filename, without extension), ensuring
+uniqueness based on filename only.  ``title`` is a human-readable display
+property that may differ between the filename-derived name (legacy RAG) and
+the LLM-extracted title (KG); both sides should key on ``document_id`` for
+joins.
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ class Paper:
     Attributes
     ----------
     document_id:
-        Canonical key (e.g. ``"md5:<hex>"``).  Stable across RAG and KG.
+        Canonical key (e.g. ``"Self-Supervised Learning"``).  Stable across RAG and KG.
     title:
         Human-readable title.  May be LLM-extracted (preferred) or
         filename-derived (fallback).

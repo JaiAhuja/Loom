@@ -15,7 +15,8 @@ class VectorStoreManager:
     """Manage ChromaDB vector store collections for RAG.
 
     Handles creating, querying, and managing document collections
-    persisted locally in ChromaDB.
+    persisted locally in ChromaDB. Each collection is stored in its own
+    directory under data/chroma_db/<collection_name>/ for easier traversal.
 
     Usage:
         store = VectorStoreManager()
@@ -26,9 +27,9 @@ class VectorStoreManager:
     """
 
     def __init__(self, persist_dir: str = None):
-        self.persist_dir = persist_dir or settings.CHROMA_PERSIST_DIR
+        self.base_persist_dir = persist_dir or settings.CHROMA_PERSIST_DIR
         self._embeddings = None
-        self._client = None
+        self._clients: dict[str, chromadb.PersistentClient] = {}  # One client per collection
 
     @property
     def embeddings(self):
@@ -37,12 +38,38 @@ class VectorStoreManager:
             self._embeddings = get_embeddings()
         return self._embeddings
 
+    def _get_collection_persist_dir(self, collection_name: str) -> str:
+        """Get the persist directory for a specific collection.
+        
+        Directory structure:
+            data/chroma_db/
+            ├── collection_1/
+            │   ├── chroma.sqlite3
+            │   └── <hash-based-dirs>/
+            ├── collection_2/
+            │   ├── chroma.sqlite3
+            │   └── <hash-based-dirs>/
+        """
+        import os
+        collection_dir = os.path.join(self.base_persist_dir, collection_name)
+        os.makedirs(collection_dir, exist_ok=True)
+        return collection_dir
+
+    def _get_client_for_collection(self, collection_name: str) -> chromadb.PersistentClient:
+        """Get or create a ChromaDB PersistentClient for the given collection."""
+        if collection_name not in self._clients:
+            persist_dir = self._get_collection_persist_dir(collection_name)
+            self._clients[collection_name] = chromadb.PersistentClient(path=persist_dir)
+        return self._clients[collection_name]
+
     @property
     def client(self):
-        """Lazy-initialize the ChromaDB persistent client."""
-        if self._client is None:
-            self._client = chromadb.PersistentClient(path=self.persist_dir)
-        return self._client
+        """Lazy-initialize the default ChromaDB persistent client.
+        
+        Deprecated: Use _get_client_for_collection() instead for collection-specific clients.
+        """
+        # For backwards compatibility, return a client for "default" collection
+        return self._get_client_for_collection("default")
 
     def get_or_create_store(self, collection_name: str) -> Chroma:
         """Get or create a ChromaDB-backed vector store.
@@ -53,10 +80,11 @@ class VectorStoreManager:
         Returns:
             LangChain Chroma vector store instance.
         """
+        persist_dir = self._get_collection_persist_dir(collection_name)
         return Chroma(
             collection_name=collection_name,
             embedding_function=self.embeddings,
-            persist_directory=self.persist_dir,
+            persist_directory=persist_dir,
         )
 
     def add_documents(
@@ -79,7 +107,8 @@ class VectorStoreManager:
 
         if all(ids):
             # Fast path: deterministic IDs → upsert via raw ChromaDB client
-            collection = self.client.get_or_create_collection(collection_name)
+            client = self._get_client_for_collection(collection_name)
+            collection = client.get_or_create_collection(collection_name)
             texts = [doc.page_content for doc in documents]
             metadatas = [doc.metadata for doc in documents]
             embeddings = self.embeddings.embed_documents(texts)
@@ -120,7 +149,7 @@ class VectorStoreManager:
     def list_papers(self, collection_name: str) -> list[dict]:
         """List all distinct papers stored in a collection.
 
-        Papers are keyed by ``document_id`` (content-addressed MD5) so the
+        Papers are keyed by ``document_id`` (derived from filename) so the
         same paper in RAG and KG can be joined unambiguously.  When a chunk
         predates identity tracking the filename-derived title is used as a
         synthetic ``document_id`` prefixed with ``legacy:``.
@@ -134,7 +163,8 @@ class VectorStoreManager:
             ``domain``, ``chunk_count``.
         """
         try:
-            collection = self.client.get_collection(collection_name)
+            client = self._get_client_for_collection(collection_name)
+            collection = client.get_collection(collection_name)
             results = collection.get(include=["metadatas"])
             # document_id -> aggregate dict
             by_doc: dict[str, dict] = {}
@@ -158,15 +188,29 @@ class VectorStoreManager:
 
     def list_collections(self) -> list[str]:
         """List all available collection names.
+        
+        Returns the list of subdirectories under base_persist_dir that are
+        collection directories (contain chroma.sqlite3), each representing
+        a collection.
 
         Returns:
-            List of collection name strings.
+            List of collection name strings, sorted alphabetically.
         """
+        import os
         try:
-            collections = self.client.list_collections()
-            if not collections:
+            if not os.path.isdir(self.base_persist_dir):
                 return []
-            return [c.name for c in collections]
+            entries = os.listdir(self.base_persist_dir)
+            # Filter to only directories that contain chroma.sqlite3 (collection dirs)
+            collections = []
+            for entry in entries:
+                entry_path = os.path.join(self.base_persist_dir, entry)
+                if os.path.isdir(entry_path):
+                    # Check if this directory is a collection directory
+                    # by looking for chroma.sqlite3
+                    if os.path.isfile(os.path.join(entry_path, "chroma.sqlite3")):
+                        collections.append(entry)
+            return sorted(collections)
         except Exception:
             logger.debug("Failed to list collections", exc_info=True)
             return []
@@ -181,19 +225,37 @@ class VectorStoreManager:
             Number of stored chunks, or 0 if collection doesn't exist.
         """
         try:
-            collection = self.client.get_collection(collection_name)
+            client = self._get_client_for_collection(collection_name)
+            collection = client.get_collection(collection_name)
             return collection.count()
         except Exception:
             logger.debug("Failed to get count for collection %s", collection_name, exc_info=True)
             return 0
 
     def delete_collection(self, collection_name: str) -> None:
-        """Delete an entire collection.
+        """Delete an entire collection and its directory.
 
         Args:
             collection_name: Collection to delete.
         """
-        self.client.delete_collection(collection_name)
+        import os
+        import shutil
+        
+        # Delete from ChromaDB
+        client = self._get_client_for_collection(collection_name)
+        client.delete_collection(collection_name)
+        
+        # Clean up the collection directory
+        collection_dir = self._get_collection_persist_dir(collection_name)
+        if os.path.isdir(collection_dir):
+            try:
+                shutil.rmtree(collection_dir)
+                logger.debug(f"Deleted collection directory: {collection_dir}")
+            except Exception as e:
+                logger.debug(f"Failed to delete collection directory {collection_dir}: {e}")
+        
+        # Remove from cache
+        self._clients.pop(collection_name, None)
 
     def delete_paper(self, collection_name: str, document_id: str) -> int:
         """Delete all chunks belonging to a single paper.
@@ -211,7 +273,8 @@ class VectorStoreManager:
             Number of chunks deleted (best-effort).
         """
         try:
-            collection = self.client.get_collection(collection_name)
+            client = self._get_client_for_collection(collection_name)
+            collection = client.get_collection(collection_name)
             existing = collection.get(where={"document_id": document_id})
             ids = existing.get("ids") or []
             if not ids and document_id.startswith("legacy:"):

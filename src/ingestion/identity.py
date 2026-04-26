@@ -1,4 +1,8 @@
-"""Document identity helpers — stable hashing and path management."""
+"""Document identity helpers — filename-based identity and path management.
+
+Document IDs are now derived from filenames (not content hashes) for simpler,
+more intuitive uniqueness. Files are still organized by MD5 on disk for deduplication.
+"""
 
 from __future__ import annotations
 
@@ -40,8 +44,8 @@ def _sanitize_filename(name: str) -> str:
 @dataclass(frozen=True)
 class DocumentIdentity:
     """Immutable identity for a single ingested document."""
-    document_id: str       # e.g. "md5:abc123..."
-    source_md5: str        # hex MD5 of original file bytes
+    document_id: str       # e.g. "Self-Supervised Learning" (derived from filename, no extension)
+    source_md5: str        # hex MD5 of original file bytes (for storage organization)
     ingest_id: str         # UUID-4 for the ingest run
     original_filename: str
 
@@ -65,9 +69,16 @@ def compute_file_hash(file_path: str) -> str:
     return h.hexdigest()
 
 
-def make_document_id(source_md5: str) -> str:
-    """Derive a deterministic document ID from a content hash."""
-    return f"md5:{source_md5}"
+def make_document_id(original_filename: str) -> str:
+    """Derive a deterministic document ID from the filename.
+    
+    This ensures uniqueness based on filename only, avoiding content-based hashing overhead.
+    The filename is sanitized to be path-safe.
+    """
+    safe_name = _sanitize_filename(original_filename)
+    # Remove extension for cleaner document_id
+    name_without_ext = os.path.splitext(safe_name)[0]
+    return name_without_ext or "document"
 
 
 def build_identity(file_bytes: bytes, original_filename: str, ingest_id: str) -> DocumentIdentity:
@@ -76,13 +87,16 @@ def build_identity(file_bytes: bytes, original_filename: str, ingest_id: str) ->
     The provided ``original_filename`` is sanitised — path components and
     unsafe characters are stripped — before being stored on the identity
     so every downstream disk write is safe from path-traversal.
+    
+    The document_id is now based on the filename for simpler, deterministic identity.
     """
-    md5 = hash_bytes(file_bytes)
+    md5 = hash_bytes(file_bytes)  # Still computed for file storage organization
+    safe_filename = _sanitize_filename(original_filename)
     return DocumentIdentity(
-        document_id=make_document_id(md5),
+        document_id=make_document_id(original_filename),
         source_md5=md5,
         ingest_id=ingest_id,
-        original_filename=_sanitize_filename(original_filename),
+        original_filename=safe_filename,
     )
 
 
