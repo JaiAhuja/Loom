@@ -381,43 +381,6 @@ Edit the prompts in `src/graph/nodes.py` to customize the agent's personality, e
 
 ---
 
-## ⚠️ Migration Notes
-
-### Graph identity: title → document_id (v0.6)
-
-Paper nodes in Neo4j are now keyed by `document_id` (a content-addressed
-`md5:<hex>` hash) instead of `title`. This prevents distinct PDFs that
-share the same title from being collapsed into one node.
-
-**Impact on existing data:** Paper nodes created before this change have no
-`document_id` property and will not match new writes. To migrate a running
-instance, either:
-
-1. **Clear and re-ingest** — drop the graph (`MATCH (n) DETACH DELETE n` in
-   the Neo4j browser) and re-upload your PDFs, or
-2. **Back-fill manually** — set `document_id` on existing Paper and Finding
-   nodes (e.g. `SET p.document_id = 'file:' + p.title`).
-
-Finding nodes now carry a `paper_document_id` property alongside the
-existing `paper_title` for reliable cross-paper linking.
-
-### Concept identity: name-only → domain-scoped (v0.7)
-
-Concept nodes are now uniquely keyed by `concept_key`
-(`normalized_domain:lowercased_name`) instead of `name` alone. This prevents
-cross-domain collisions (e.g. "attention" in AI vs. psychology).
-
-**Impact on existing data:** Old Concept nodes have no `concept_key` property.
-Re-ingestion after clearing the graph is recommended.
-
-### Graph query safety (v0.8–v0.11)
-
-The LLM-to-Cypher query tool has been permanently removed and replaced with
-an intent-based service that only executes pre-written, parameterised Cypher.
-The Knowledge Graph explorer page no longer exposes a raw Cypher input.
-
----
-
 ## 🤝 Contributing
 
 Contributions are welcome! Please:
