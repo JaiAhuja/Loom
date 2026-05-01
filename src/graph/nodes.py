@@ -1,4 +1,4 @@
-from langchain_core.messages import SystemMessage
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 from src.graph.state import AgentState
 
@@ -127,9 +127,14 @@ def create_agent_node(llm, tools: list, system_prompt: str):
     else:
         llm_with_tools = llm
 
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", system_prompt),
+        MessagesPlaceholder(variable_name="messages"),
+    ])
+    chain = prompt | llm_with_tools
+
     def agent_node(state: AgentState) -> dict:
-        messages = [SystemMessage(content=system_prompt)] + state["messages"]
-        response = llm_with_tools.invoke(messages)
+        response = chain.invoke({"messages": state["messages"]})
         return {"messages": [response]}
 
     return agent_node

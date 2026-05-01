@@ -48,7 +48,8 @@ class GraphBuilder:
             vector_store: Shared :class:`VectorStoreManager` for the RAG tool
                 (reuses the app-level cached instance instead of creating a
                 new Chroma client per chat turn).
-            document_id: Canonical paper identity (``"md5:<hex>"``) used to
+            document_id: Canonical paper identity (filename-based, e.g.
+                ``"Self-Supervised Learning"``) used to filter retrieval to a
                 scope RAG retrieval to a single paper.
 
         Returns:

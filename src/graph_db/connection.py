@@ -1,6 +1,6 @@
-from neo4j import GraphDatabase
-
 import atexit
+
+from neo4j import GraphDatabase
 
 from config.settings import settings
 

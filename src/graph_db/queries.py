@@ -82,12 +82,7 @@ class KnowledgeGraphQueries:
         )
 
     def get_cross_paper_findings(self, rel_type: str) -> list[dict]:
-        """Get findings linked by a given relationship type (CONTRADICTS/SUPPORTS/EXTENDS).
-
-        ``rel_type`` is validated against an allow-list because it is
-        interpolated into the Cypher query — accepting free-form input
-        here would be a relationship-type injection.
-        """
+        """Get findings linked by CONTRADICTS/SUPPORTS/EXTENDS. rel_type is allow-listed."""
         allowed = {SUPPORTS, CONTRADICTS, EXTENDS}
         if rel_type not in allowed:
             raise ValueError(

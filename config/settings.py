@@ -25,16 +25,18 @@ class Settings(BaseSettings):
     OUTPUT_DIR: str = "./outputs"
 
     # Neo4j
-    # NEO4J_DATABASE defaults to None so the driver uses the server's default
-    # database (``neo4j`` for Community edition).  Set it explicitly in .env
-    # only if you are using Enterprise edition with a named database.
-    NEO4J_URI: str = "neo4j://[local_instance_id]:7687"
+    # Use bolt:// for standalone instances; neo4j:// is for Causal Clusters.
+    NEO4J_URI: str = "neo4j://127.0.0.1:7687"
     NEO4J_USERNAME: str = "neo4j"
     NEO4J_PASSWORD: str = "Loom-Weave-Threads"
     NEO4J_DATABASE: Optional[str] = None
 
     # RAG
     RAG_TOP_K: int = 5
+    # MMR retrieval: number of candidate docs to fetch before re-ranking
+    RAG_FETCH_K: int = 10
+    # MMR lambda: 1.0 = pure relevance, 0.0 = pure diversity
+    RAG_MMR_LAMBDA: float = 0.4
 
     class Config:
         env_file = ".env"
@@ -46,10 +48,7 @@ settings = Settings()
 
 
 def configure_langsmith() -> bool:
-    """Configure LangSmith tracing if credentials are provided.
-
-    Returns True if tracing was enabled, False otherwise.
-    """
+    """Enable LangSmith tracing if credentials are configured."""
     if settings.LANGSMITH_API_KEY and settings.LANGSMITH_TRACING:
         os.environ["LANGCHAIN_TRACING_V2"] = "true"
         os.environ["LANGCHAIN_API_KEY"] = settings.LANGSMITH_API_KEY

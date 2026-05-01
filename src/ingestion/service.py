@@ -34,8 +34,8 @@ class FileResult:
     content_chunks: int = 0
     has_summary: bool = False
     error: Optional[str] = None
-    # Document identity (populated on successful processing)
     identity: Optional[DocumentIdentity] = None
+
 
 @dataclass
 class IngestionResult:
@@ -56,19 +56,11 @@ class IngestionResult:
 # Signature: (current_step: int, total_steps: int, message: str) -> None
 ProgressCallback = Callable[[int, int, str], None]
 
-# Number of trackable sub-steps per file: hash, PDF→docling, LLM profile, chunk+index.
+# Sub-steps per file: hash, PDF→docling, LLM profile, chunk+index.
 _SUB_STEPS = 4
 
 class IngestionService:
-    """Coordinate PDF ➜ RAG chunks.
-
-    Parameters
-    ----------
-    processor : DocumentProcessor
-        Converts a PDF file into chunks and markdown.
-    store : VectorStoreManager
-        Persists document chunks into ChromaDB.
-    """
+    """Coordinate PDF → RAG chunks."""
 
     def __init__(self, processor: DocumentProcessor, store: VectorStoreManager):
         self.processor = processor

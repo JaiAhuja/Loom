@@ -1,9 +1,10 @@
 import os
 
 import streamlit as st
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from config.settings import configure_langsmith
+from src.evaluation import RAGJudge
 from src.graph import GraphBuilder
 from src.graph_db import get_neo4j_connection
 from src.ingestion import IngestionService
@@ -22,6 +23,7 @@ from src.ui.chrome import (
     render_hero,
     render_status_bar,
 )
+from src.ui.confirm import confirm_destructive
 from config.settings import settings
 
 st.set_page_config(
@@ -83,11 +85,13 @@ with st.sidebar:
         st.caption("Start it with: `ollama serve`")
         st.stop()
 
-    neo4j_connected = check_neo4j_status()
+    neo4j_connected, neo4j_error = check_neo4j_status()
     if neo4j_connected:
         st.success("✅ Neo4j connected")
     else:
         st.warning("⚠️ Neo4j not connected")
+        if neo4j_error:
+            st.caption(f"🔍 {neo4j_error}")
         st.caption("`docker-compose up -d` or use Neo4j Desktop")
 
     # ----- Model Settings -----
@@ -305,19 +309,33 @@ with st.sidebar:
 
         # Delete collection
         if existing_collections and collection_name in existing_collections:
-            if st.button("🗑️ Delete Collection", use_container_width=True):
-                store.delete_collection(collection_name)
-                st.success(f"Deleted `{collection_name}`")
+            # Create a container outside the sidebar for the confirmation message
+            _del_collection_confirm_area = st.container()
+            
+            if confirm_destructive(
+                "🗑️ Delete Collection",
+                f"Delete collection **{collection_name}** and all its document chunks? This cannot be undone. (The Knowledge Graph will remain unchanged.)",
+                key=f"delete_collection_{collection_name}",
+                on_confirm=lambda cn=collection_name: (
+                    store.delete_collection(cn),
+                    st.session_state.pop(f"_confirm_delete_collection_{cn}", None),
+                ),
+                trigger_kwargs={"use_container_width": True},
+                confirm_container=_del_collection_confirm_area,
+            ):
+                st.success(f"Deleted collection: `{collection_name}`")
                 st.rerun()
 
     # ----- Session Actions -----
     st.divider()
     st.subheader("Session")
 
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     with col1:
         if st.button("Clear Chat", use_container_width=True):
             st.session_state.messages = []
+            if "_resumed_from" in st.session_state:
+                del st.session_state["_resumed_from"]
             st.rerun()
     with col2:
         if st.session_state.messages:
@@ -334,31 +352,53 @@ with st.sidebar:
                 mime="text/markdown",
                 use_container_width=True,
             )
-
+    
     # Save full chat to disk (explicit action)
-    if st.session_state.messages:
-        if st.button("Save Chat to History", use_container_width=True):
+    with col3:
+        if st.button(
+            "Save Chat to History",
+            use_container_width=True,
+            disabled=not st.session_state.messages,
+            key="save_chat_button",
+        ):
             from src.chat import ChatMetadata, ChatStore
 
             chat_store = ChatStore()
             try:
-                saved_path = chat_store.save(
-                    st.session_state.messages,
-                    metadata=ChatMetadata(
-                        model=model,
-                        temperature=temperature,
-                        use_rag=use_rag,
-                        use_graph=use_graph and neo4j_connected,
-                        collection_name=collection_name,
-                        paper_filter=paper_filter,
-                        document_id=document_id_filter,
-                    ),
-                )
-                st.success(f"Saved to chat_history/{os.path.basename(saved_path)}")
+                # Check if this is a resumed chat that should be updated
+                if "_resumed_from" in st.session_state:
+                    resumed_filename = st.session_state["_resumed_from"]
+                    saved_path = chat_store.update(
+                        resumed_filename,
+                        st.session_state.messages,
+                        metadata=ChatMetadata(
+                            model=model,
+                            temperature=temperature,
+                            use_rag=use_rag,
+                            use_graph=use_graph and neo4j_connected,
+                            collection_name=collection_name,
+                            paper_filter=paper_filter,
+                            document_id=document_id_filter,
+                        ),
+                    )
+                    st.success(f"Updated chat: {os.path.basename(saved_path)}")
+                else:
+                    # New chat - create a new history entry
+                    saved_path = chat_store.save(
+                        st.session_state.messages,
+                        metadata=ChatMetadata(
+                            model=model,
+                            temperature=temperature,
+                            use_rag=use_rag,
+                            use_graph=use_graph and neo4j_connected,
+                            collection_name=collection_name,
+                            paper_filter=paper_filter,
+                            document_id=document_id_filter,
+                        ),
+                    )
+                    st.success(f"Saved to chat_history/{os.path.basename(saved_path)}")
             except ValueError as exc:
                 st.warning(str(exc))
-    else:
-        st.caption("Start a conversation to enable saving.")
 
 
 # --- Main Chat Interface ---
@@ -394,6 +434,7 @@ if user_input := st.chat_input("Ask about any concept in DE, DS, or AI..."):
 
     # Build and invoke the graph
     with st.chat_message("assistant"):
+        result = {}
         with st.spinner("Thinking..."):
             try:
                 graph = _get_compiled_graph(
@@ -413,6 +454,25 @@ if user_input := st.chat_input("Ask about any concept in DE, DS, or AI..."):
 
             except Exception as e:
                 response = format_chat_error(e, model)
+
+        # --- LLM-as-a-Judge evaluation (only when RAG tool was actually invoked) ---
+        if use_rag:
+            retrieved_chunks = [
+                msg.content
+                for msg in result.get("messages", [])
+                if isinstance(msg, ToolMessage) and getattr(msg, "name", "") == "query_documents"
+            ]
+            if retrieved_chunks:
+                with st.spinner("Evaluating response quality..."):
+                    judge = RAGJudge()
+                    eval_result = judge.evaluate(
+                        query=user_input,
+                        context="\n\n---\n\n".join(retrieved_chunks),
+                        answer=response,
+                        model=model,
+                    )
+                if eval_result is not None:
+                    response = response + eval_result.as_markdown()
 
         # Render the response
         st.markdown(response)

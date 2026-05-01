@@ -21,7 +21,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from src.domain.taxonomy import canonicalize_domain, domains_as_string
 from src.utils.json_parser import parse_llm_json
 
-if TYPE_CHECKING:  # pragma: no cover - typing only
+if TYPE_CHECKING:
     from langchain_core.messages import BaseMessage
 
 logger = logging.getLogger(__name__)
@@ -49,7 +49,7 @@ class FindingItem(BaseModel):
 
 
 class PaperProfile(BaseModel):
-    """LLM-extracted profile covering everything RAG + KG need from one call."""
+    """LLM-extracted profile covering title, domain, summary, concepts, methods, and findings."""
 
     title: str = ""
     authors: list[str] = Field(default_factory=list)
@@ -76,11 +76,7 @@ _STRICT_PRIORITY_KEYWORDS = {
 }
 
 def select_key_sections(text: str, budget: int = 75000) -> str:
-    """Strictly picks front matter plus high-signal summary/outcome sections.
-    
-    Excludes high-volume 'filler' like Introduction, Methodology, 
-    Literature Review, and Discussion.
-    """
+    """Pick front matter and high-signal sections (abstract, results, conclusions) up to budget chars."""
     parts = re.split(r"(?=^#{1,3}\s)", text, flags=re.MULTILINE)
     
     front_matter: list[str] = []

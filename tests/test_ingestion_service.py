@@ -89,7 +89,7 @@ def test_ingest_single_file_rag_only(tmp_path):
 
     # Identity fields
     assert fr.identity is not None
-    assert fr.identity.document_id.startswith("md5:")
+    assert not fr.identity.document_id.startswith("md5:")  # Now filename-based
     assert fr.identity.ingest_id == result.ingest_id
     assert fr.identity.original_filename == "paper.pdf"
 

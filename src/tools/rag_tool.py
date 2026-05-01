@@ -20,7 +20,8 @@ def create_rag_tool(
             When ``None`` a fresh instance is created (legacy behaviour).
             Passing the app-level cached store avoids spinning up a new
             Chroma client + embedding cache on every chat turn.
-        document_id: Canonical paper identity (``"md5:<hex>"``) that scopes
+        document_id: Canonical paper identity (filename-based, e.g.
+            ``"Self-Supervised Learning"``) that scopes
             retrieval by the stable content-addressed key.
 
     Returns:

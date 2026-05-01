@@ -8,7 +8,7 @@ flowchart TB
     subgraph EXT["☁️ External Services"]
         direction LR
         OLLAMA["🦙 Ollama<br/><i>localhost:11434</i><br/>LLM inference &amp; embeddings"]
-        NEO4J["🔵 Neo4j<br/><i>neo4j://127.0.0.1:7687</i><br/>Knowledge graph DB"]
+        NEO4J["🔵 Neo4j<br/><i>bolt://127.0.0.1:7687</i><br/>Knowledge graph DB"]
         CHROMADB["🟢 ChromaDB<br/><i>./data/chroma_db</i><br/>Vector store"]
         LANGSMITH["📊 LangSmith<br/><i>Optional tracing</i>"]
     end
@@ -34,7 +34,7 @@ flowchart TB
     %% ─────────────────────────────────────────
     subgraph INGEST["📥 Ingestion Pipeline"]
         direction TB
-        IDENTITY["<b>ingestion/identity.py</b><br/>DocumentIdentity<br/>• MD5 content hash<br/>• Content-addressed save<br/>• Deterministic doc IDs"]
+        IDENTITY["<b>ingestion/identity.py</b><br/>DocumentIdentity<br/>• Filename-based doc_id<br/>• MD5 hash for storage path<br/>• UUID ingest_id per session"]
         INGSVC["<b>ingestion/service.py</b><br/>IngestionService<br/>• Orchestrates full pipeline<br/>• Dedup via content hash<br/>• Progress callbacks<br/>• Per-file result tracking"]
     end
 
@@ -52,6 +52,7 @@ flowchart TB
     %% ─────────────────────────────────────────
     subgraph LLM["🧠 LLM Provider"]
         PROVIDER["<b>llm/provider.py</b><br/>get_llm() → ChatOllama<br/>get_embeddings() → OllamaEmbeddings<br/>• Cached by model+temp"]
+        PAPERPROFILE["<b>llm/paper_profile.py</b><br/>PaperProfile + extract_paper_profile()<br/>• Single ChatPromptTemplate call<br/>• Extracts title, domain, summary,<br/>&nbsp;&nbsp;concepts, methods, findings"]
     end
 
     %% ─────────────────────────────────────────
@@ -87,9 +88,11 @@ flowchart TB
     %% ─────────────────────────────────────────
     %% UTILITIES
     %% ─────────────────────────────────────────
-    subgraph UTIL["🛠️ Utilities"]
-        MDHANDLER["<b>utils/markdown_handler.py</b><br/>MarkdownHandler<br/>• Save responses as .md<br/>• List/load saved files<br/>• Topic extraction"]
+    subgraph UTIL["🛠️ Utilities & UI"]
+        CHATSTORE["<b>chat/store.py</b><br/>ChatStore<br/>• Save/load/search JSON chats<br/>• Resume conversations<br/>• Topic extraction"]
+        EVALUATION["<b>evaluation/judge.py</b><br/>RAGJudge<br/>• LLM-as-a-Judge scoring<br/>• Context relevance (0-5)<br/>• Faithfulness (0-5)<br/>• Answer relevance (0-5)"]
         JSONPARSER["<b>utils/json_parser.py</b><br/>parse_llm_json()<br/>• Extract JSON from LLM output<br/>• Handles code-block wrapping"]
+        UIMOD["<b>ui/bootstrap.py / chrome.py</b><br/>• Cached status checks (Ollama, Neo4j)<br/>• Shared HTML snippets<br/>• Destructive-action confirm"]
     end
 
     %% ═══════════════════════════════════════
@@ -122,7 +125,8 @@ flowchart TB
     KGPAGE -->|"read-only queries"| QUERIES
 
     %% RAG internals
-    PROCESSOR -->|"LLM classify + summarise"| PROVIDER
+    PROCESSOR -->|"extract paper profile"| PAPERPROFILE
+    PAPERPROFILE -->|"LLM call"| PROVIDER
     STORE -->|"embed chunks"| PROVIDER
 
     %% KG internals
@@ -140,7 +144,10 @@ flowchart TB
     SETTINGS -.->|"settings singleton"| CONN
 
     %% Utils
-    APP -->|"save/load markdown"| MDHANDLER
+    APP -->|"save/load chat history"| CHATSTORE
+    APP -->|"RAG quality scoring"| EVALUATION
+    EVALUATION -->|"LLM judge call"| PROVIDER
+    APP -->|"UI helpers"| UIMOD
     PROCESSOR -->|"parse LLM JSON"| JSONPARSER
 
     %% LangSmith
@@ -159,14 +166,15 @@ flowchart TB
     classDef agentNode fill:#c62828,stroke:#b71c1c,color:#fff
     classDef toolNode fill:#f9a825,stroke:#f57f17,color:#000
     classDef utilNode fill:#546e7a,stroke:#37474f,color:#fff
+    classDef llmNode fill:#7b1fa2,stroke:#4a148c,color:#fff
 
     class OLLAMA,NEO4J,CHROMADB,LANGSMITH extService
     class APP,KGPAGE uiNode
     class SETTINGS cfgNode
     class IDENTITY,INGSVC ingestNode
     class PROCESSOR,STORE ragNode
-    class PROVIDER llmNode
+    class PROVIDER,PAPERPROFILE llmNode
     class CONN,SCHEMA,QUERIES,SERVICE kgNode
     class STATE,NODES,BUILDER agentNode
     class RAGTOOL,SAFEGRAPH toolNode
-    class MDHANDLER,JSONPARSER utilNode
+    class CHATSTORE,EVALUATION,JSONPARSER,UIMOD utilNode

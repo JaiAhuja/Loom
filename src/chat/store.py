@@ -81,15 +81,9 @@ class ChatStore:
         self.directory = directory
         os.makedirs(self.directory, exist_ok=True)
 
-    # ------------------------------------------------------------------
-    # paths
-    # ------------------------------------------------------------------
     def _path_for(self, filename: str) -> str:
         return os.path.join(self.directory, filename)
 
-    # ------------------------------------------------------------------
-    # save / load / delete
-    # ------------------------------------------------------------------
     def save(
         self,
         messages: list[dict],
@@ -112,6 +106,52 @@ class ChatStore:
             ],
             metadata=metadata or ChatMetadata(),
             saved_at=now.strftime("%Y-%m-%d %H:%M:%S"),
+        )
+
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "topic": record.topic,
+                    "saved_at": record.saved_at,
+                    "metadata": asdict(record.metadata),
+                    "messages": record.messages,
+                },
+                f,
+                indent=2,
+                ensure_ascii=False,
+            )
+        return path
+
+    def update(
+        self,
+        filename: str,
+        messages: list[dict],
+        metadata: Optional[ChatMetadata] = None,
+    ) -> str:
+        """Update an existing JSON chat file and return its path."""
+        if not messages:
+            raise ValueError("Cannot save an empty conversation.")
+
+        path = self._path_for(filename)
+        
+        # Load existing record to preserve original topic and saved_at
+        try:
+            existing_record = self.load(filename)
+            topic = existing_record.topic
+            saved_at = existing_record.saved_at
+        except Exception:
+            # If load fails, treat as new save
+            topic = _topic_from_messages(messages)
+            saved_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        record = ChatRecord(
+            topic=topic,
+            messages=[
+                {"role": m.get("role", "assistant"), "content": m.get("content", "")}
+                for m in messages
+            ],
+            metadata=metadata or ChatMetadata(),
+            saved_at=saved_at,
         )
 
         with open(path, "w", encoding="utf-8") as f:
