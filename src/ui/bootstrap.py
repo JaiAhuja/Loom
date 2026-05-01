@@ -14,26 +14,27 @@ from src.rag import DocumentProcessor, VectorStoreManager
 
 @st.cache_data(ttl=30)
 def check_ollama_status() -> tuple[bool, list[str]]:
-    """Return (connected, [model_name...]) for the configured Ollama host."""
+    """Return (connected, [model_names]) for the configured Ollama host."""
     try:
-        # Only follow http/https — reject file://, ftp://, etc. so a tampered
-        # OLLAMA_BASE_URL cannot be abused to read local files (Bandit B310).
         base_url = settings.OLLAMA_BASE_URL
         if not base_url.startswith(("http://", "https://")):
             return False, []
         req = urllib.request.Request(f"{base_url}/api/tags")
-        with urllib.request.urlopen(req, timeout=5) as resp:  # noqa: S310 — scheme validated above
+        with urllib.request.urlopen(req, timeout=5) as resp:  # noqa: S310
             data = json.loads(resp.read().decode())
             return True, [m["name"] for m in data.get("models", [])]
     except Exception:
         return False, []
 
 
-def check_neo4j_status() -> bool:
+@st.cache_data(ttl=15)
+def check_neo4j_status() -> tuple[bool, str]:
+    """Return (connected, error_message) for the configured Neo4j instance."""
     try:
-        return get_neo4j_connection().is_connected()
-    except Exception:
-        return False
+        get_neo4j_connection().driver.verify_connectivity()
+        return True, ""
+    except Exception as exc:
+        return False, f"{type(exc).__name__}: {exc}"
 
 
 @st.cache_resource

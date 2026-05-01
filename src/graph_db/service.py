@@ -39,11 +39,7 @@ class GraphQueryService:
         self._queries = KnowledgeGraphQueries(conn)
 
     def execute(self, intent: str, params: dict[str, Any] | None = None) -> dict:
-        """Dispatch *intent* to the matching parameterised query.
-
-        Returns ``{"intent": ..., "params": ..., "data": ...}``.
-        Raises ``ValueError`` for unknown intents or missing params.
-        """
+        """Dispatch intent to the matching query. Raises ValueError for unknown intents or missing params."""
         if intent not in _DISPATCH:
             raise ValueError(
                 f"Unknown intent {intent!r}. "

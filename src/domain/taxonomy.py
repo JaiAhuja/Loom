@@ -9,8 +9,7 @@ source of truth.
 
 from __future__ import annotations
 
-# Display-friendly canonical list (Title Case).  Processor + extractor
-# prompts both reference this list.
+# Canonical domain list (Title Case) — shared by RAG processor and KG extractor.
 DOMAINS: tuple[str, ...] = (
     "Artificial Intelligence",
     "Machine Learning",
@@ -34,8 +33,7 @@ DOMAINS: tuple[str, ...] = (
     "Other",
 )
 
-# Aliases used by legacy snake_case prompts and .env files — normalised
-# to the canonical Title-Case form above.
+# Aliases for snake_case / abbreviated inputs normalised to Title Case.
 _ALIASES: dict[str, str] = {
     "ai_general": "Artificial Intelligence",
     "ai": "Artificial Intelligence",
@@ -72,8 +70,7 @@ _ALIASES: dict[str, str] = {
     "": "Other",
 }
 
-# Broad buckets used by the graph layer to compare concepts across
-# closely-related fine-grained domains.
+# Broad buckets for cross-domain concept comparison.
 _BUCKETS: dict[str, str] = {
     "Artificial Intelligence": "ai",
     "Machine Learning": "ai",
@@ -99,10 +96,7 @@ _BUCKETS: dict[str, str] = {
 
 
 def canonicalize_domain(raw: str) -> str:
-    """Map any domain string (Title-Case, snake_case, alias) to the canonical form.
-
-    Returns ``"Other"`` when no match is found.
-    """
+    """Map any domain string to the canonical Title-Case form. Returns 'Other' on no match."""
     if not raw:
         return "Other"
     trimmed = raw.strip()
@@ -115,11 +109,7 @@ def canonicalize_domain(raw: str) -> str:
 
 
 def normalize_concept_domain(raw_domain: str) -> str:
-    """Map a fine-grained domain label to a broad bucket.
-
-    Returns one of ``"ai"``, ``"data_infra"``, ``"analytics"``, or ``"general"``.
-    Works on both canonical Title-Case and legacy snake_case inputs.
-    """
+    """Map a domain label to a broad bucket (ai/data_infra/analytics/general)."""
     canonical = canonicalize_domain(raw_domain)
     return _BUCKETS.get(canonical, "general")
 

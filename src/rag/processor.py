@@ -117,11 +117,7 @@ class DocumentProcessor:
 
     @staticmethod
     def generate_chunk_id(document_id: str, paper_chunk: str) -> str:
-        """Derive a deterministic, collision-resistant chunk ID.
-
-        The ID is the hex MD5 of ``document_id:paper_chunk``, ensuring
-        the same file content + chunk position always maps to the same ID.
-        """
+        """Derive a deterministic chunk ID from document_id and chunk label."""
         key = f"{document_id}:{paper_chunk}"
         return hashlib.md5(key.encode(), usedforsecurity=False).hexdigest()
 

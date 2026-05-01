@@ -1,9 +1,10 @@
 import os
 
 import streamlit as st
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from config.settings import configure_langsmith
+from src.evaluation import RAGJudge
 from src.graph import GraphBuilder
 from src.graph_db import get_neo4j_connection
 from src.ingestion import IngestionService
@@ -84,11 +85,13 @@ with st.sidebar:
         st.caption("Start it with: `ollama serve`")
         st.stop()
 
-    neo4j_connected = check_neo4j_status()
+    neo4j_connected, neo4j_error = check_neo4j_status()
     if neo4j_connected:
         st.success("✅ Neo4j connected")
     else:
         st.warning("⚠️ Neo4j not connected")
+        if neo4j_error:
+            st.caption(f"🔍 {neo4j_error}")
         st.caption("`docker-compose up -d` or use Neo4j Desktop")
 
     # ----- Model Settings -----
@@ -431,6 +434,7 @@ if user_input := st.chat_input("Ask about any concept in DE, DS, or AI..."):
 
     # Build and invoke the graph
     with st.chat_message("assistant"):
+        result = {}
         with st.spinner("Thinking..."):
             try:
                 graph = _get_compiled_graph(
@@ -450,6 +454,25 @@ if user_input := st.chat_input("Ask about any concept in DE, DS, or AI..."):
 
             except Exception as e:
                 response = format_chat_error(e, model)
+
+        # --- LLM-as-a-Judge evaluation (only when RAG tool was actually invoked) ---
+        if use_rag:
+            retrieved_chunks = [
+                msg.content
+                for msg in result.get("messages", [])
+                if isinstance(msg, ToolMessage) and getattr(msg, "name", "") == "query_documents"
+            ]
+            if retrieved_chunks:
+                with st.spinner("Evaluating response quality..."):
+                    judge = RAGJudge()
+                    eval_result = judge.evaluate(
+                        query=user_input,
+                        context="\n\n---\n\n".join(retrieved_chunks),
+                        answer=response,
+                        model=model,
+                    )
+                if eval_result is not None:
+                    response = response + eval_result.as_markdown()
 
         # Render the response
         st.markdown(response)

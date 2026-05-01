@@ -13,30 +13,17 @@ import uuid
 from dataclasses import dataclass
 
 
-# Keep only letters, digits, dots, hyphens, underscores and spaces.
-# Anything else (path separators, NUL, shell metacharacters, …) is replaced
-# with an underscore.  Applied before joining an uploaded filename into any
-# on-disk path to prevent directory-traversal via crafted ``file.name``.
+# Whitelist for safe filenames: allow letters, digits, dots, hyphens, underscores, spaces.
+# Anything else is replaced to prevent directory-traversal via crafted filenames.
 _SAFE_FILENAME_RE = re.compile(r"[^A-Za-z0-9._\- ]+")
 _MAX_FILENAME_LEN = 200
 
 
 def _sanitize_filename(name: str) -> str:
-    """Return a safe basename suitable for joining with a trusted directory.
-
-    Strips any directory components, drops NUL bytes, replaces path-unsafe
-    characters and collapses leading dots (to avoid dotfile / traversal
-    tricks such as ``..`` or ``.git``).  Falls back to ``"upload"`` if
-    sanitisation leaves nothing usable.
-    """
-    # Take basename against both separators so Windows paths on POSIX
-    # (or vice-versa) are handled consistently.
+    """Return a safe basename, stripping path components and unsafe characters."""
     base = os.path.basename(name.replace("\\", "/"))
-    # Defense-in-depth: replace any residual separator or NUL.
     base = base.replace("/", "_").replace("\x00", "")
-    # Collapse leading dots to avoid "..", ".env", etc.
     base = base.lstrip(".")
-    # Whitelist-replace everything else.
     base = _SAFE_FILENAME_RE.sub("_", base).strip() or "upload"
     return base[:_MAX_FILENAME_LEN]
 
@@ -51,17 +38,15 @@ class DocumentIdentity:
 
 
 def generate_ingest_id() -> str:
-    """Return a fresh UUID-4 string for an ingestion run."""
     return str(uuid.uuid4())
 
 
 def hash_bytes(data: bytes) -> str:
-    """Return the hex MD5 of *data*."""
     return hashlib.md5(data, usedforsecurity=False).hexdigest()
 
 
 def compute_file_hash(file_path: str) -> str:
-    """Return the hex MD5 of the file at *file_path* (reads in 64 KiB blocks)."""
+    """Return the hex MD5 of the file at file_path, reading in 64 KiB blocks."""
     h = hashlib.md5(usedforsecurity=False)
     with open(file_path, "rb") as f:
         for block in iter(lambda: f.read(65_536), b""):
@@ -70,13 +55,8 @@ def compute_file_hash(file_path: str) -> str:
 
 
 def make_document_id(original_filename: str) -> str:
-    """Derive a deterministic document ID from the filename.
-    
-    This ensures uniqueness based on filename only, avoiding content-based hashing overhead.
-    The filename is sanitized to be path-safe.
-    """
+    """Derive a document ID from the filename (no extension)."""
     safe_name = _sanitize_filename(original_filename)
-    # Remove extension for cleaner document_id
     name_without_ext = os.path.splitext(safe_name)[0]
     return name_without_ext or "document"
 

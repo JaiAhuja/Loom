@@ -33,14 +33,7 @@ _INTENT_HELP = "\n".join(
 
 
 def create_safe_graph_tool(conn: Neo4jConnection) -> Any:
-    """Create the safe, intent-based knowledge graph query tool.
-
-    Args:
-        conn: An active Neo4jConnection.
-
-    Returns:
-        A LangChain ``@tool`` decorated function.
-    """
+    """Create the intent-based knowledge graph query tool."""
     svc = GraphQueryService(conn)
 
     # Pre-build the full description with intent list so the LLM sees it.

@@ -141,10 +141,17 @@ class VectorStoreManager:
         """
         top_k = top_k or settings.RAG_TOP_K
         store = self.get_or_create_store(collection_name)
-        search_kwargs: dict = {"k": top_k}
+        search_kwargs: dict = {
+            "k": top_k,
+            "fetch_k": settings.RAG_FETCH_K,
+            "lambda_mult": settings.RAG_MMR_LAMBDA,
+        }
         if document_id:
             search_kwargs["filter"] = {"document_id": document_id}
-        return store.as_retriever(search_kwargs=search_kwargs)
+        return store.as_retriever(
+            search_type="mmr",
+            search_kwargs=search_kwargs,
+        )
 
     def list_papers(self, collection_name: str) -> list[dict]:
         """List all distinct papers stored in a collection.
@@ -200,17 +207,10 @@ class VectorStoreManager:
         try:
             if not os.path.isdir(self.base_persist_dir):
                 return []
-            entries = os.listdir(self.base_persist_dir)
-            # Filter to only directories that contain chroma.sqlite3 (collection dirs)
-            collections = []
-            for entry in entries:
-                entry_path = os.path.join(self.base_persist_dir, entry)
-                if os.path.isdir(entry_path):
-                    # Check if this directory is a collection directory
-                    # by looking for chroma.sqlite3
-                    if os.path.isfile(os.path.join(entry_path, "chroma.sqlite3")):
-                        collections.append(entry)
-            return sorted(collections)
+            return sorted(
+                entry for entry in os.listdir(self.base_persist_dir)
+                if os.path.isfile(os.path.join(self.base_persist_dir, entry, "chroma.sqlite3"))
+            )
         except Exception:
             logger.debug("Failed to list collections", exc_info=True)
             return []
@@ -250,11 +250,9 @@ class VectorStoreManager:
         if os.path.isdir(collection_dir):
             try:
                 shutil.rmtree(collection_dir)
-                logger.debug(f"Deleted collection directory: {collection_dir}")
+                logger.debug("Deleted collection directory: %s", collection_dir)
             except Exception as e:
-                logger.debug(f"Failed to delete collection directory {collection_dir}: {e}")
-        
-        # Remove from cache
+                logger.debug("Failed to delete collection directory %s: %s", collection_dir, e)
         self._clients.pop(collection_name, None)
 
     def delete_paper(self, collection_name: str, document_id: str) -> int:

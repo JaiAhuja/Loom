@@ -81,15 +81,9 @@ class ChatStore:
         self.directory = directory
         os.makedirs(self.directory, exist_ok=True)
 
-    # ------------------------------------------------------------------
-    # paths
-    # ------------------------------------------------------------------
     def _path_for(self, filename: str) -> str:
         return os.path.join(self.directory, filename)
 
-    # ------------------------------------------------------------------
-    # save / load / delete
-    # ------------------------------------------------------------------
     def save(
         self,
         messages: list[dict],
@@ -134,7 +128,7 @@ class ChatStore:
         messages: list[dict],
         metadata: Optional[ChatMetadata] = None,
     ) -> str:
-        """Update an existing JSON chat file with new messages and return its path."""
+        """Update an existing JSON chat file and return its path."""
         if not messages:
             raise ValueError("Cannot save an empty conversation.")
 
