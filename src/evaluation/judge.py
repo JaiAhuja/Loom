@@ -9,65 +9,54 @@ import json
 import logging
 from dataclasses import dataclass
 
+from langchain_core.prompts import ChatPromptTemplate
+
 from src.llm import get_llm
 
 logger = logging.getLogger(__name__)
 
-_JUDGE_PROMPT_TEMPLATE = """\
-You are a strict RAG evaluation judge. Your task is to evaluate the quality of a \
-Retrieval-Augmented Generation (RAG) response.
+_JUDGE_PROMPT = ChatPromptTemplate.from_messages([
+    (
+        "system",
+        """### ROLE
+You are a strict RAG evaluation judge. Score a RAG response across three dimensions.
 
-## Input
+### SCORING RUBRIC
 
-**User Query:**
+**Context Relevance (0–5)** — How relevant is the retrieved context to the user's query?
+  0 – Completely irrelevant.  2 – Tangentially related.  3 – Partially relevant.
+  4 – Mostly relevant.  5 – Highly relevant; directly addresses what the query requires.
+
+**Faithfulness (0–5)** — How well is the answer grounded in the retrieved context?
+  0 – Contradicts context or invents facts.  2 – Significant fabrication.  3 – Mostly grounded.
+  4 – Well grounded; only trivial details venture beyond context.  5 – Fully grounded.
+
+**Answer Relevance (0–5)** — How well does the answer address the original query?
+  0 – Off-topic.  2 – Touches topic but misses core question.  3 – Partially answers.
+  4 – Mostly answers; minor omissions.  5 – Comprehensively and accurately answers.
+
+### OUTPUT INSTRUCTIONS
+- Return ONLY valid JSON — no markdown fences, no extra text.
+- Use this exact structure:
+{{
+  "context_relevance": <integer 0-5>,
+  "faithfulness": <integer 0-5>,
+  "answer_relevance": <integer 0-5>,
+  "reasoning": "<one concise sentence justifying each of the three scores>"
+}}"""
+    ),
+    (
+        "human",
+        """**User Query:**
 {query}
 
 **Retrieved Context:**
 {context}
 
 **Generated Answer:**
-{answer}
-
-## Scoring Dimensions
-
-Score each dimension as an integer from 0 to 5 using the rubrics below.
-
-**Context Relevance (0–5)**
-How relevant is the retrieved context to the user's query?
-  0 – Completely irrelevant; context has nothing to do with the query.
-  2 – Tangentially related; mentions the topic but misses the point.
-  3 – Partially relevant; some useful content but significant gaps.
-  4 – Mostly relevant; covers the key aspects with minor gaps.
-  5 – Highly relevant; directly and fully addresses what the query requires.
-
-**Faithfulness (0–5)**
-How well is the generated answer grounded in the retrieved context (no hallucinations)?
-  0 – Answer contradicts the context or invents unsupported facts.
-  2 – Significant fabrication; only a small fraction is supported by context.
-  3 – Mostly grounded but includes some unsupported claims.
-  4 – Well grounded; only trivial details venture beyond the context.
-  5 – Fully grounded; every factual claim can be traced to the retrieved context.
-
-**Answer Relevance (0–5)**
-How well does the generated answer address the user's original query?
-  0 – Answer is off-topic or does not address the query at all.
-  2 – Touches the topic but misses the core question.
-  3 – Partially addresses the query; some important aspects are missing.
-  4 – Mostly answers the query; minor omissions only.
-  5 – Comprehensively and accurately answers the query.
-
-## Output Format
-
-Return ONLY a valid JSON object — no markdown fences, no extra text — with this \
-exact structure:
-
-{{
-  "context_relevance": <integer 0-5>,
-  "faithfulness": <integer 0-5>,
-  "answer_relevance": <integer 0-5>,
-  "reasoning": "<one concise sentence justifying each of the three scores>"
-}}
-"""
+{answer}"""
+    ),
+])
 
 
 @dataclass
@@ -127,14 +116,10 @@ class RAGJudge:
             answer: The final generated answer.
             model: Ollama model override. Defaults to the configured model.
         """
-        prompt = _JUDGE_PROMPT_TEMPLATE.format(
-            query=query,
-            context=context,
-            answer=answer,
-        )
         try:
             llm = get_llm(model=model, temperature=0.0, require_json=True)
-            response = llm.invoke(prompt)
+            chain = _JUDGE_PROMPT | llm
+            response = chain.invoke({"query": query, "context": context, "answer": answer})
             raw = response.content.strip()
             data = json.loads(raw)
             return EvaluationResult(

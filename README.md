@@ -69,16 +69,16 @@ A **local, fully open-source knowledge graph & AI tutor** for researchers, stude
 
 When PDFs are uploaded they pass through a deterministic identity pipeline:
 
-1. **MD5 hash** computed from file bytes → stable `document_id` (`md5:<hex>`)
-2. **Unique `ingest_id`** assigned per upload session
-3. **Deterministic `chunk_id`** generated per text chunk → idempotent vector writes (upsert)
-4. Files stored under a hash-based path in `data/pdfs/`
+1. **MD5 hash** computed from file bytes → used for content-addressed storage under `data/pdfs/`
+2. **Filename-derived `document_id`** — the sanitised filename stem (e.g. `Self-Supervised Learning`) is the stable key used across RAG and KG
+3. **Unique `ingest_id`** assigned per upload session
+4. **Deterministic `chunk_id`** generated per text chunk → idempotent vector writes (upsert)
 5. Re-uploading the same file overwrites existing chunks instead of duplicating them
 
 ### Knowledge Graph Pipeline
 
 1. **PDF uploaded** via Streamlit sidebar
-2. **Identity assigned** — MD5 hash → `document_id` (`md5:<hex>`), unique `ingest_id`
+2. **Identity assigned** — filename stem → `document_id` (e.g. `My-Paper` → `My Paper`); MD5 hash → content-addressed storage path; unique `ingest_id` per session
 3. **Docling** converts PDF to Markdown (shared with RAG pipeline)
 4. **LLM extracts** structured entities: papers, concepts, methods, findings, authors
 5. **Entity resolution** — LLM fuzzy-matches against existing graph entities to avoid duplicates
@@ -174,7 +174,7 @@ See the Configuration section below for the full list of settings.
 docker-compose up -d
 ```
 
-This starts a Neo4j Community instance on `neo4j://127.0.0.1:7687` with the Neo4j Browser at `http://localhost:7474`. Default credentials: `neo4j` / `Loom-Weave-Threads`.
+This starts a Neo4j Community instance on `bolt://127.0.0.1:7687` with the Neo4j Browser at `http://localhost:7474`. Default credentials: `neo4j` / `Loom-Weave-Threads`.
 
 > ⚠️ **Change the default password before running on anything other than a private dev machine.** The bundled `docker-compose.yml` ships with `Loom-Weave-Threads` hard-coded for convenience — that value is public in this repo and **must not** be used on shared, networked, or cloud hosts. Set `NEO4J_PASSWORD` in a local `.env` file (picked up by both `docker-compose.yml` and the app's `.env`) and re-run `docker-compose up -d`.
 
@@ -194,15 +194,17 @@ The app will open in your browser at `http://localhost:8501`.
 
 ```
 loom/
-├── .gitignore                # Git ignore rules
-├── README.md                 # This file
-├── requirements.txt          # Python dependencies
+├── .gitignore
+├── README.md
+├── requirements.txt
 ├── docker-compose.yml        # Neo4j Docker setup
+├── pytest.ini
 ├── app.py                    # Streamlit application entry point
+├── granite_tokenizer/        # Local Granite tokenizer files (HybridChunker)
 │
 ├── pages/
-│   ├── 2_Knowledge_Graph.py     # Knowledge Graph explorer page
-│   └── 3_Chat_History.py        # Saved chat history viewer
+│   ├── 2_Knowledge_Graph.py  # Knowledge Graph explorer page
+│   └── 3_Chat_History.py     # Saved chat history viewer
 │
 ├── config/
 │   ├── __init__.py
@@ -210,13 +212,27 @@ loom/
 │
 ├── src/
 │   ├── __init__.py
+│   ├── chat/
+│   │   ├── __init__.py
+│   │   └── store.py          # Chat history persistence (save/load/search JSON)
+│   │
+│   ├── domain/
+│   │   ├── __init__.py
+│   │   ├── paper.py          # Paper domain model
+│   │   └── taxonomy.py       # Canonical domain taxonomy (shared by RAG + KG)
+│   │
+│   ├── evaluation/
+│   │   ├── __init__.py
+│   │   └── judge.py          # LLM-as-a-Judge RAG quality scorer
+│   │
 │   ├── ingestion/
 │   │   ├── __init__.py
-│   │   ├── identity.py       # Document identity (hash, document_id, ingest_id)
-│   │   └── service.py        # Ingestion orchestration (PDF → RAG + KG)
+│   │   ├── identity.py       # Document identity (filename-based doc_id, MD5, ingest_id)
+│   │   └── service.py        # Ingestion orchestration (PDF → RAG chunks)
 │   │
 │   ├── llm/
 │   │   ├── __init__.py
+│   │   ├── paper_profile.py  # Single-call LLM paper profiling (PaperProfile + extraction)
 │   │   └── provider.py       # Ollama LLM & embeddings factory
 │   │
 │   ├── graph/
@@ -239,20 +255,27 @@ loom/
 │   │
 │   ├── tools/
 │   │   ├── __init__.py
-
 │   │   ├── rag_tool.py       # Document query tool factory
 │   │   └── safe_graph_tool.py # Intent-based graph query tool
 │   │
+│   ├── ui/
+│   │   ├── __init__.py
+│   │   ├── bootstrap.py      # Cached service checks & component factories
+│   │   ├── chrome.py         # Reusable Streamlit HTML snippets (brand, status bar)
+│   │   └── confirm.py        # Destructive-action confirmation helper
+│   │
 │   └── utils/
 │       ├── __init__.py
-│       ├── json_parser.py       # Shared LLM JSON response parser
-│       └── markdown_handler.py  # Save/load Markdown files
+│       └── json_parser.py    # Shared LLM JSON response parser
 │
 ├── data/
-│   ├── pdfs/                 # Uploaded PDF storage
+│   ├── chat_history/         # Saved conversation JSON files
+│   ├── pdfs/                 # Uploaded PDF storage (content-addressed)
+│   ├── txt/                  # Docling-extracted Markdown text files
 │   └── chroma_db/            # ChromaDB persistent storage
 │
-└── outputs/                  # Saved Markdown responses
+├── outputs/                  # Saved Markdown exports
+└── tests/                    # pytest test suite
 ```
 
 ---
@@ -273,7 +296,7 @@ All settings are managed via environment variables (`.env` file):
 | `CHROMA_PERSIST_DIR` | `./data/chroma_db` | ChromaDB storage path |
 | `OUTPUT_DIR` | `./outputs` | Markdown output directory |
 | `RAG_TOP_K` | `5` | Number of chunks to retrieve |
-| `NEO4J_URI` | `neo4j://127.0.0.1:7687` | Neo4j connection URI |
+| `NEO4J_URI` | `bolt://127.0.0.1:7687` | Neo4j connection URI |
 | `NEO4J_USERNAME` | `neo4j` | Neo4j username |
 | `NEO4J_PASSWORD` | `Loom-Weave-Threads` | Neo4j password (set in docker-compose) |
 | `NEO4J_DATABASE` | *(unset)* | Named DB (Enterprise only); leave unset for Community |
