@@ -215,6 +215,16 @@ class VectorStoreManager:
             logger.debug("Failed to list collections", exc_info=True)
             return []
 
+    def is_document_indexed(self, collection_name: str, document_id: str) -> bool:
+        """Return True if the collection already contains chunks for this document_id."""
+        try:
+            client = self._get_client_for_collection(collection_name)
+            collection = client.get_collection(collection_name)
+            results = collection.get(where={"document_id": document_id}, limit=1, include=[])
+            return bool(results.get("ids"))
+        except Exception:
+            return False
+
     def get_collection_count(self, collection_name: str) -> int:
         """Get the number of documents in a collection.
 

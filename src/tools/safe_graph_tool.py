@@ -75,8 +75,34 @@ def create_safe_graph_tool(conn: Neo4jConnection) -> Any:
         # --- format result ---
         return _format_result(result["intent"], result["data"])
 
+    async def _aquery_knowledge_graph(intent: str, params: str = "{}") -> str:
+        """Async version of the knowledge graph query tool."""
+        # --- parse params ---
+        try:
+            parsed_params: dict = json.loads(params) if isinstance(params, str) else params
+            if not isinstance(parsed_params, dict):
+                parsed_params = {}
+        except (json.JSONDecodeError, TypeError):
+            return (
+                f"Invalid params — expected a JSON object string, got: {params!r}\n"
+                f"Supported intents:\n{_INTENT_HELP}"
+            )
+
+        # --- dispatch ---
+        try:
+            result = await svc.aexecute(intent, parsed_params)
+        except ValueError as exc:
+            return f"Graph query error: {exc}\nSupported intents:\n{_INTENT_HELP}"
+        except Exception as exc:
+            logger.warning("Graph query service error: %s", exc)
+            return f"Graph query failed unexpectedly: {exc}"
+
+        # --- format result ---
+        return _format_result(result["intent"], result["data"])
+
     return StructuredTool.from_function(
         func=_query_knowledge_graph,
+        coroutine=_aquery_knowledge_graph,
         name="query_knowledge_graph",
         description=_TOOL_DESCRIPTION,
     )

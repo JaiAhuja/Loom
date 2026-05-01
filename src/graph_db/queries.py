@@ -443,3 +443,98 @@ class KnowledgeGraphQueries:
             if bucket in entry:
                 entry[bucket] += row["cnt"]
         return list(matrix.values())
+
+    # ------------------------------------------------------------------
+    # Async counterparts (used by the LangGraph agent path)
+    # ------------------------------------------------------------------
+
+    async def aget_all_papers(self) -> list[dict]:
+        return await self.conn.aexecute_read(
+            f"""MATCH (p:{PAPER})
+            OPTIONAL MATCH (p)-[:{DISCUSSES}]->(c:{CONCEPT})
+            RETURN p.document_id AS document_id, p.title AS title,
+                   p.domain AS domain, p.year AS year,
+                   p.summary AS summary, p.authors_str AS authors,
+                   count(c) AS concept_count
+            ORDER BY p.title"""
+        )
+
+    async def aget_paper_details(self, document_id: str) -> dict:
+        if not document_id:
+            return {"concepts": [], "methods": [], "findings": []}
+        params = {"key": document_id}
+        concepts = await self.conn.aexecute_read(
+            f"""MATCH (p:{PAPER} {{document_id: $key}})-[r:{DISCUSSES}]->(c:{CONCEPT})
+            RETURN c.name AS name, c.description AS description,
+                   c.domain AS domain, r.depth AS depth
+            ORDER BY r.depth, c.name""",
+            params,
+        )
+        methods = await self.conn.aexecute_read(
+            f"""MATCH (p:{PAPER} {{document_id: $key}})-[:{USES_METHOD}]->(m:{METHOD})
+            RETURN m.name AS name, m.description AS description""",
+            params,
+        )
+        findings = await self.conn.aexecute_read(
+            f"""MATCH (p:{PAPER} {{document_id: $key}})-[:{HAS_FINDING}]->(f:{FINDING})
+            RETURN f.claim AS claim, f.evidence_type AS evidence_type""",
+            params,
+        )
+        return {"concepts": concepts, "methods": methods, "findings": findings}
+
+    async def aget_shared_concepts(self, paper_a: str, paper_b: str) -> list[dict]:
+        return await self.conn.aexecute_read(
+            f"""MATCH (p1:{PAPER} {{title: $a}})-[:{DISCUSSES}]->(c:{CONCEPT})<-[:{DISCUSSES}]-(p2:{PAPER} {{title: $b}})
+            RETURN c.name AS concept, c.description AS description, c.domain AS domain""",
+            {"a": paper_a, "b": paper_b},
+        )
+
+    async def aget_cross_paper_findings(self, rel_type: str) -> list[dict]:
+        allowed = {SUPPORTS, CONTRADICTS, EXTENDS}
+        if rel_type not in allowed:
+            raise ValueError(
+                f"Unsupported rel_type {rel_type!r}; expected one of {sorted(allowed)}"
+            )
+        return await self.conn.aexecute_read(
+            f"""MATCH (f1:{FINDING})-[r:{rel_type}]->(f2:{FINDING})
+            RETURN f1.claim AS finding_1, f1.paper_title AS paper_1,
+                   f2.claim AS finding_2, f2.paper_title AS paper_2,
+                   r.reason AS reason"""
+        )
+
+    async def aget_all_concepts(self) -> list[dict]:
+        return await self.conn.aexecute_read(
+            f"""MATCH (c:{CONCEPT})
+            OPTIONAL MATCH (p:{PAPER})-[:{DISCUSSES}]->(c)
+            RETURN c.name AS name, c.description AS description,
+                   c.domain AS domain, count(p) AS paper_count
+            ORDER BY paper_count DESC"""
+        )
+
+    async def aget_concept_papers(self, concept_name: str) -> list[dict]:
+        return await self.conn.aexecute_read(
+            f"""MATCH (p:{PAPER})-[r:{DISCUSSES}]->(c:{CONCEPT} {{name: $name}})
+            RETURN p.title AS title, p.domain AS domain, r.depth AS depth""",
+            {"name": concept_name},
+        )
+
+    async def aget_related_concepts(self, concept_name: str) -> list[dict]:
+        return await self.conn.aexecute_read(
+            f"""MATCH (c1:{CONCEPT} {{name: $name}})-[r:{RELATED_TO}]-(c2:{CONCEPT})
+            RETURN c2.name AS name, c2.description AS description,
+                   r.strength AS strength
+            ORDER BY r.strength DESC""",
+            {"name": concept_name},
+        )
+
+    async def aget_graph_stats(self) -> dict:
+        result = await self.conn.aexecute_read(
+            f"""OPTIONAL MATCH (p:{PAPER}) WITH count(p) AS papers
+            OPTIONAL MATCH (c:{CONCEPT}) WITH papers, count(c) AS concepts
+            OPTIONAL MATCH (m:{METHOD}) WITH papers, concepts, count(m) AS methods
+            OPTIONAL MATCH (f:{FINDING}) WITH papers, concepts, methods, count(f) AS findings
+            RETURN papers, concepts, methods, findings"""
+        )
+        if result:
+            return result[0]
+        return {"papers": 0, "concepts": 0, "methods": 0, "findings": 0}

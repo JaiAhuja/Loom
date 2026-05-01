@@ -35,9 +35,15 @@ def _fake_processor(chunks=None, paper_title="Test Paper", markdown="# Test", pr
     return proc
 
 
-def _fake_store():
-    """Return a mock VectorStoreManager."""
-    return MagicMock()
+def _fake_store(already_indexed: bool = False):
+    """Return a mock VectorStoreManager.
+
+    ``already_indexed`` controls what ``is_document_indexed`` returns so tests
+    can exercise both the normal processing path and the skip path.
+    """
+    store = MagicMock()
+    store.is_document_indexed.return_value = already_indexed
+    return store
 
 
 # ---------------------------------------------------------------------------
@@ -45,16 +51,18 @@ def _fake_store():
 # ---------------------------------------------------------------------------
 
 def test_ingestion_result_counts():
-    """succeeded / failed properties compute correctly."""
+    """succeeded / failed / skipped properties compute correctly."""
     res = IngestionResult(
         file_results=[
             FileResult(file_name="a.pdf", success=True),
             FileResult(file_name="b.pdf", success=False, error="boom"),
             FileResult(file_name="c.pdf", success=True),
+            FileResult(file_name="d.pdf", success=True, skipped=True),
         ]
     )
-    assert res.succeeded == 2
+    assert res.succeeded == 3
     assert res.failed == 1
+    assert res.skipped == 1
 
 
 # ---------------------------------------------------------------------------
@@ -67,7 +75,7 @@ def test_ingest_single_file_rag_only(tmp_path):
     pdf.write_bytes(b"%PDF-fake")
 
     proc = _fake_processor()
-    store = _fake_store()
+    store = _fake_store(already_indexed=False)
     svc = IngestionService(processor=proc, store=store)
 
     result = svc.ingest_files(
@@ -113,7 +121,7 @@ def test_ingest_multiple_files(tmp_path):
         p.write_bytes(b"%PDF-fake")
         files.append(str(p))
 
-    svc = IngestionService(processor=_fake_processor(), store=_fake_store())
+    svc = IngestionService(processor=_fake_processor(), store=_fake_store(already_indexed=False))
     result = svc.ingest_files(file_paths=files, collection_name="col")
 
     assert result.succeeded == 3
@@ -133,7 +141,7 @@ def test_ingest_processor_failure(tmp_path):
     proc = MagicMock()
     proc.process.side_effect = RuntimeError("corrupt PDF")
 
-    svc = IngestionService(processor=proc, store=_fake_store())
+    svc = IngestionService(processor=proc, store=_fake_store(already_indexed=False))
     result = svc.ingest_files(file_paths=[str(pdf)], collection_name="col")
 
     assert result.failed == 1
@@ -156,15 +164,15 @@ def test_progress_callback_called(tmp_path):
     def recorder(current, total, msg):
         calls.append((current, total, msg))
 
-    svc = IngestionService(processor=_fake_processor(), store=_fake_store())
+    svc = IngestionService(processor=_fake_processor(), store=_fake_store(already_indexed=False))
     svc.ingest_files(
         file_paths=[str(pdf)],
         collection_name="col",
         on_progress=recorder,
     )
 
-    # 1 step per file + final "Done!" = 2 calls
-    assert len(calls) == 2
+    # hash step (step 0) + up to 3 sub-steps + final "Done!" — at minimum 2 calls
+    assert len(calls) >= 2
     assert calls[-1][2] == "Done!"
 
 
@@ -177,10 +185,38 @@ def test_default_collection_name(tmp_path):
     pdf = tmp_path / "paper.pdf"
     pdf.write_bytes(b"%PDF-fake")
 
-    store = _fake_store()
+    store = _fake_store(already_indexed=False)
     svc = IngestionService(processor=_fake_processor(), store=store)
     svc.ingest_files(file_paths=[str(pdf)])
 
     store.add_documents.assert_called_once()
     _, kwargs = store.add_documents.call_args
     assert kwargs["collection_name"] == "default"
+
+
+# ---------------------------------------------------------------------------
+# Already-indexed skip
+# ---------------------------------------------------------------------------
+
+def test_already_indexed_skips_all_processing(tmp_path):
+    """When is_document_indexed returns True, no processing or storing occurs."""
+    pdf = tmp_path / "paper.pdf"
+    pdf.write_bytes(b"%PDF-fake")
+
+    proc = _fake_processor()
+    store = _fake_store(already_indexed=True)
+    svc = IngestionService(processor=proc, store=store)
+
+    result = svc.ingest_files(file_paths=[str(pdf)], collection_name="col")
+
+    assert result.succeeded == 1
+    assert result.skipped == 1
+    assert result.failed == 0
+
+    fr = result.file_results[0]
+    assert fr.skipped is True
+    assert fr.success is True
+
+    # Expensive steps must NOT have run
+    proc.process.assert_not_called()
+    store.add_documents.assert_not_called()

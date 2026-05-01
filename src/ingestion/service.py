@@ -30,6 +30,7 @@ class FileResult:
 
     file_name: str
     success: bool = False
+    skipped: bool = False
     paper_title: str = ""
     content_chunks: int = 0
     has_summary: bool = False
@@ -50,7 +51,11 @@ class IngestionResult:
 
     @property
     def failed(self) -> int:
-        return sum(1 for r in self.file_results if not r.success)
+        return sum(1 for r in self.file_results if not r.success and not r.skipped)
+
+    @property
+    def skipped(self) -> int:
+        return sum(1 for r in self.file_results if r.skipped)
 
 # Type alias for the optional progress callback.
 # Signature: (current_step: int, total_steps: int, message: str) -> None
@@ -131,7 +136,7 @@ class IngestionService:
             try:
                 sha = compute_file_hash(file_path)
                 identity = DocumentIdentity(
-                    document_id=make_document_id(sha),
+                    document_id=make_document_id(file_name),  # filename-based, not hash
                     source_md5=sha,
                     ingest_id=ingest_id,
                     original_filename=file_name,
@@ -140,6 +145,18 @@ class IngestionService:
             except Exception as exc:
                 logger.error("Hash computation failed for %s: %s", file_path, exc)
                 fr.error = f"Hash computation failed for {file_name}"
+                result.file_results.append(fr)
+                continue
+
+            # ── Skip if already indexed ──────────────────────────────────────
+            if self.store.is_document_indexed(collection_name, identity.document_id):
+                skip_msg = f"[{idx+1}/{n_files}] Already indexed — skipping {file_name}"
+                print(f"\n{skip_msg}", flush=True)
+                if on_progress:
+                    on_progress(step_base + _SUB_STEPS, total_steps, skip_msg)
+                fr.skipped = True
+                fr.success = True  # not a failure; the doc is available for use
+                fr.paper_title = identity.document_id
                 result.file_results.append(fr)
                 continue
 

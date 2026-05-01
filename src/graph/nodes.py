@@ -133,8 +133,8 @@ def create_agent_node(llm, tools: list, system_prompt: str):
     ])
     chain = prompt | llm_with_tools
 
-    def agent_node(state: AgentState) -> dict:
-        response = chain.invoke({"messages": state["messages"]})
+    async def agent_node(state: AgentState) -> dict:
+        response = await chain.ainvoke({"messages": state["messages"]})
         return {"messages": [response]}
 
     return agent_node

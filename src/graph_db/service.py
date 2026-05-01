@@ -25,6 +25,19 @@ _DISPATCH: dict[str, tuple[tuple[str, ...], Callable]] = {
     "extension_list":     ((), lambda q, _: q.get_cross_paper_findings("EXTENDS")),
 }
 
+# Async dispatch table — mirrors _DISPATCH but calls async methods.
+_ASYNC_DISPATCH: dict[str, tuple[tuple[str, ...], Callable]] = {
+    "graph_stats":        ((), lambda q, _: q.aget_graph_stats()),
+    "paper_list":         ((), lambda q, _: q.aget_all_papers()),
+    "paper_details":      (("title",),              lambda q, p: q.aget_paper_details(p["title"])),
+    "shared_concepts":    (("paper_a", "paper_b"),   lambda q, p: q.aget_shared_concepts(p["paper_a"], p["paper_b"])),
+    "concept_papers":     (("concept_name",),        lambda q, p: q.aget_concept_papers(p["concept_name"])),
+    "related_concepts":   (("concept_name",),        lambda q, p: q.aget_related_concepts(p["concept_name"])),
+    "contradiction_list": ((), lambda q, _: q.aget_cross_paper_findings("CONTRADICTS")),
+    "support_list":       ((), lambda q, _: q.aget_cross_paper_findings("SUPPORTS")),
+    "extension_list":     ((), lambda q, _: q.aget_cross_paper_findings("EXTENDS")),
+}
+
 ALL_INTENTS: frozenset[str] = frozenset(_DISPATCH)
 
 REQUIRED_PARAMS: dict[str, tuple[str, ...]] = {
@@ -54,4 +67,22 @@ class GraphQueryService:
             raise ValueError(f"Intent {intent!r} requires {required}; missing: {missing}")
 
         data = call(self._queries, params)
+        return {"intent": intent, "params": params, "data": data}
+
+    async def aexecute(self, intent: str, params: dict[str, Any] | None = None) -> dict:
+        """Async dispatch intent to the matching query."""
+        if intent not in _ASYNC_DISPATCH:
+            raise ValueError(
+                f"Unknown intent {intent!r}. "
+                f"Supported: {', '.join(sorted(ALL_INTENTS))}"
+            )
+
+        required, call = _ASYNC_DISPATCH[intent]
+        params = dict(params) if params else {}
+
+        missing = [p for p in required if p not in params]
+        if missing:
+            raise ValueError(f"Intent {intent!r} requires {required}; missing: {missing}")
+
+        data = await call(self._queries, params)
         return {"intent": intent, "params": params, "data": data}
