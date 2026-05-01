@@ -182,8 +182,6 @@ def extract_paper_profile(
         A :class:`PaperProfile` (possibly with empty fields) or ``None``
         if extraction/parsing failed.
     """
-    from langchain_core.messages import HumanMessage, SystemMessage
-
     text = select_key_sections(markdown_text, budget=budget)
     chain = _PROMPT_TEMPLATE | llm
     try:
@@ -195,14 +193,14 @@ def extract_paper_profile(
             }
         )
         parsed = parse_llm_json(response.content)
-        
-        if not parsed or "error" in parsed:
-            logger.warning(f"Failed to parse JSON: {parsed.get('error', 'Unknown error')}")
+
+        if not isinstance(parsed, dict) or "error" in parsed:
+            logger.warning("Failed to parse JSON: %s", (parsed or {}).get("error", "Unknown error"))
             return None
     except Exception as exc:
         logger.warning("Paper profile extraction failed: %s", exc)
         return None
-    
+
     return _build_profile(parsed)
 
 
@@ -228,8 +226,8 @@ async def aextract_paper_profile(
         )
         parsed = parse_llm_json(response.content)
 
-        if not parsed or "error" in parsed:
-            logger.warning(f"Failed to parse JSON: {parsed.get('error', 'Unknown error')}")
+        if not isinstance(parsed, dict) or "error" in parsed:
+            logger.warning("Failed to parse JSON: %s", (parsed or {}).get("error", "Unknown error"))
             return None
     except Exception as exc:
         logger.warning("Async paper profile extraction failed: %s", exc)

@@ -123,11 +123,14 @@ class Neo4jConnection:
     # ------------------------------------------------------------------
 
     async def aexecute_read(self, query: str, parameters: dict = None) -> list[dict]:
-        """Async version of execute_read."""
+        """Async version of execute_read — uses a managed read transaction with auto-retry."""
         async with self.async_driver.session(database=self.database) as session:
-            result = await session.run(query, parameters or {})
-            records = await result.data()
-            return records
+
+            async def _work(tx):
+                result = await tx.run(query, parameters or {})
+                return await result.data()
+
+            return await session.execute_read(_work)
 
     async def aexecute_write(self, query: str, parameters: dict = None) -> list[dict]:
         """Async version of execute_write."""
@@ -145,7 +148,8 @@ class Neo4jConnection:
 
             async def _work(tx):
                 for q, params in queries:
-                    await tx.run(q, params or {})
+                    result = await tx.run(q, params or {})
+                    await result.consume()  # Exhaust cursor so the transaction can commit cleanly.
 
             await session.execute_write(_work)
 
@@ -161,14 +165,16 @@ class Neo4jConnection:
             self._driver.close()
             self._driver = None
         if self._async_driver is not None:
-            # Schedule async close if event loop is running, else ignore
             import asyncio
+            driver = self._async_driver
+            self._async_driver = None
             try:
                 loop = asyncio.get_running_loop()
-                loop.create_task(self._async_driver.close())
+                # An event loop is already running — schedule the close as a fire-and-forget task.
+                loop.create_task(driver.close())
             except RuntimeError:
-                pass
-            self._async_driver = None
+                # No running event loop (e.g. atexit, tests) — close synchronously.
+                asyncio.run(driver.close())
 
 
 # ---------------------------------------------------------------------------

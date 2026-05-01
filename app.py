@@ -285,6 +285,7 @@ with st.sidebar:
             svc = IngestionService(
                 processor=processor,
                 store=store,
+                neo4j_conn=get_neo4j_connection() if neo4j_connected else None,
             )
             ing_result = svc.ingest_files(
                 file_paths=file_paths,
@@ -295,10 +296,17 @@ with st.sidebar:
 
             # Report per-file outcomes
             for fr in ing_result.file_results:
-                if fr.success:
+                if fr.skipped:
+                    kg_label = " + KG" if fr.kg_indexed else ""
+                    st.info(
+                        f"⏭️ Already in RAG{kg_label}: **{fr.paper_title}** "
+                        f"({fr.content_chunks} chunks already stored)"
+                    )
+                elif fr.success:
                     summary_label = " + summary" if fr.has_summary else ""
+                    kg_label = " + KG" if fr.kg_indexed else ""
                     st.success(
-                        f"✅ RAG: **{fr.paper_title}** → "
+                        f"✅ RAG{kg_label}: **{fr.paper_title}** → "
                         f"{fr.content_chunks} chunks{summary_label}"
                     )
                 else:

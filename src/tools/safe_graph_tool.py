@@ -17,7 +17,7 @@ import json
 import logging
 from typing import Any
 
-from langchain_core.tools import tool, StructuredTool
+from langchain_core.tools import StructuredTool
 
 from src.graph_db.connection import Neo4jConnection
 from src.graph_db.service import GraphQueryService, ALL_INTENTS, REQUIRED_PARAMS

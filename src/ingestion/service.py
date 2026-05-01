@@ -19,6 +19,7 @@ from src.ingestion.identity import (
 )
 
 if TYPE_CHECKING:
+    from src.graph_db.connection import Neo4jConnection
     from src.rag.processor import DocumentProcessor
     from src.rag.store import VectorStoreManager
 
@@ -34,6 +35,7 @@ class FileResult:
     paper_title: str = ""
     content_chunks: int = 0
     has_summary: bool = False
+    kg_indexed: bool = False
     error: Optional[str] = None
     identity: Optional[DocumentIdentity] = None
 
@@ -65,11 +67,20 @@ ProgressCallback = Callable[[int, int, str], None]
 _SUB_STEPS = 4
 
 class IngestionService:
-    """Coordinate PDF → RAG chunks."""
+    """Coordinate PDF → RAG chunks (and optionally the Neo4j knowledge graph)."""
 
-    def __init__(self, processor: DocumentProcessor, store: VectorStoreManager):
+    def __init__(
+        self,
+        processor: "DocumentProcessor",
+        store: "VectorStoreManager",
+        neo4j_conn: "Neo4jConnection | None" = None,
+    ):
         self.processor = processor
         self.store = store
+        self._kg_writer = None
+        if neo4j_conn is not None:
+            from src.graph_db.writer import KnowledgeGraphWriter
+            self._kg_writer = KnowledgeGraphWriter(neo4j_conn)
 
     # ------------------------------------------------------------------
     # Public API
@@ -148,15 +159,41 @@ class IngestionService:
                 result.file_results.append(fr)
                 continue
 
-            # ── Skip if already indexed ──────────────────────────────────────
+            # ── Skip RAG if already indexed ───────────────────────────────────
             if self.store.is_document_indexed(collection_name, identity.document_id):
-                skip_msg = f"[{idx+1}/{n_files}] Already indexed — skipping {file_name}"
-                print(f"\n{skip_msg}", flush=True)
-                if on_progress:
-                    on_progress(step_base + _SUB_STEPS, total_steps, skip_msg)
                 fr.skipped = True
                 fr.success = True  # not a failure; the doc is available for use
-                fr.paper_title = identity.document_id
+
+                # Retrieve the real paper title and chunk count from the RAG store.
+                papers = self.store.list_papers(collection_name)
+                paper_meta = next(
+                    (p for p in papers if p["document_id"] == identity.document_id), None
+                )
+                fr.paper_title = paper_meta["title"] if paper_meta else identity.document_id
+                fr.content_chunks = paper_meta["chunk_count"] if paper_meta else 0
+
+                # Check whether KG also needs writing (e.g. Neo4j was down before).
+                if self._kg_writer is not None and not self._kg_writer.is_paper_in_kg(
+                    identity.document_id
+                ):
+                    skip_msg = (
+                        f"[{idx+1}/{n_files}] RAG already indexed — writing KG for {file_name}"
+                    )
+                    print(f"\n{skip_msg}", flush=True)
+                    if on_progress:
+                        on_progress(step_base + _SUB_STEPS, total_steps, skip_msg)
+                    fr.kg_indexed = self._write_kg_only(
+                        file_path, file_name, model, identity.document_id
+                    )
+                else:
+                    skip_msg = f"[{idx+1}/{n_files}] Already indexed — skipping {file_name}"
+                    print(f"\n{skip_msg}", flush=True)
+                    if on_progress:
+                        on_progress(step_base + _SUB_STEPS, total_steps, skip_msg)
+                    # Paper already in KG (or no KG writer); mark kg_indexed truthfully.
+                    if self._kg_writer is not None:
+                        fr.kg_indexed = self._kg_writer.is_paper_in_kg(identity.document_id)
+
                 result.file_results.append(fr)
                 continue
 
@@ -185,6 +222,19 @@ class IngestionService:
             fr.paper_title = raw_result.get("paper_title", file_name)
             fr.content_chunks = content_count
             fr.has_summary = any(c.metadata.get("chunk_type") == "summary" for c in chunks)
+
+            # KG write — uses the profile produced by the processor.
+            profile = raw_result.get("profile")
+            if self._kg_writer is not None and profile is not None:
+                try:
+                    self._kg_writer.write_paper_profile(profile, identity.document_id)
+                    fr.kg_indexed = True
+                except Exception as kg_exc:
+                    logger.warning(
+                        "KG indexing failed for %s (RAG indexing succeeded): %s",
+                        file_path, kg_exc,
+                    )
+
             result.file_results.append(fr)
 
         if on_progress:
@@ -204,7 +254,12 @@ class IngestionService:
         extra_metadata: dict | None = None,
         on_step=None,
     ):
-        """Run the processor and store chunks.  Returns ``(chunks, raw_result)`` or *None* on failure."""
+        """Run the processor and store chunks in the RAG vector store.
+
+        Returns ``(chunks, raw_result)`` or *None* on failure.  KG writing
+        is intentionally NOT done here so the caller can set ``fr.kg_indexed``
+        accurately from the outcome.
+        """
         try:
             raw_result = self.processor.process(
                 file_path, model=model, extra_metadata=extra_metadata, on_step=on_step,
@@ -215,3 +270,52 @@ class IngestionService:
         except Exception as exc:
             logger.error("Ingestion failed for %s: %s", file_path, exc)
             return None
+
+    def _write_kg_only(
+        self,
+        file_path: str,
+        file_name: str,
+        model: str | None,
+        document_id: str,
+    ) -> bool:
+        """Re-extract a paper profile from its saved Markdown and write it to Neo4j.
+
+        Called when a paper is already in the RAG store but absent from the KG
+        (e.g. Neo4j was down or the KG toggle was off during the original ingest).
+
+        Returns True on success, False on any failure.
+        """
+        if self._kg_writer is None or model is None:
+            return False
+
+        # Locate saved Markdown (written by DocumentProcessor alongside the PDF).
+        stem = os.path.splitext(file_name)[0]
+        txt_path = os.path.join("data", "txt", f"{stem}.md")
+        if not os.path.isfile(txt_path):
+            logger.warning(
+                "Saved Markdown not found at %s; cannot write KG for %s",
+                txt_path, document_id,
+            )
+            return False
+
+        try:
+            with open(txt_path, "r", encoding="utf-8") as fh:
+                markdown_text = fh.read()
+        except OSError as exc:
+            logger.warning("Could not read Markdown %s: %s", txt_path, exc)
+            return False
+
+        # Re-run profile extraction from the cached Markdown (no PDF re-conversion).
+        from src.llm import extract_paper_profile, get_llm  # local import to stay lean
+        llm = get_llm(model=model, temperature=0.1, require_json=True)
+        profile = extract_paper_profile(llm, markdown_text, file_name)
+        if profile is None:
+            logger.warning("Profile extraction returned None for %s", document_id)
+            return False
+
+        try:
+            self._kg_writer.write_paper_profile(profile, document_id)
+            return True
+        except Exception as exc:
+            logger.warning("KG write failed for %s: %s", document_id, exc)
+            return False

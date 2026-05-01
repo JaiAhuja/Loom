@@ -47,25 +47,32 @@ class KnowledgeGraphQueries:
         )
 
     def get_paper_details(self, document_id: str) -> dict:
-        """Get full details for a paper including all linked entities."""
+        """Get full details for a paper including all linked entities.
+
+        ``document_id`` may be the canonical filename-derived ID **or** the
+        paper's title — both are matched so the agent (which sees titles) and
+        the UI (which uses document_ids) call the same method correctly.
+        """
         if not document_id:
             return {"concepts": [], "methods": [], "findings": []}
 
         params = {"key": document_id}
+        # Match by document_id first; fall back to title for agent callers.
+        lookup = f"(p:{PAPER}) WHERE p.document_id = $key OR p.title = $key"
         concepts = self.conn.execute_read(
-            f"""MATCH (p:{PAPER} {{document_id: $key}})-[r:{DISCUSSES}]->(c:{CONCEPT})
+            f"""MATCH {lookup}-[r:{DISCUSSES}]->(c:{CONCEPT})
             RETURN c.name AS name, c.description AS description,
                    c.domain AS domain, r.depth AS depth
             ORDER BY r.depth, c.name""",
             params,
         )
         methods = self.conn.execute_read(
-            f"""MATCH (p:{PAPER} {{document_id: $key}})-[:{USES_METHOD}]->(m:{METHOD})
+            f"""MATCH {lookup}-[:{USES_METHOD}]->(m:{METHOD})
             RETURN m.name AS name, m.description AS description""",
             params,
         )
         findings = self.conn.execute_read(
-            f"""MATCH (p:{PAPER} {{document_id: $key}})-[:{HAS_FINDING}]->(f:{FINDING})
+            f"""MATCH {lookup}-[:{HAS_FINDING}]->(f:{FINDING})
             RETURN f.claim AS claim, f.evidence_type AS evidence_type""",
             params,
         )
@@ -344,25 +351,25 @@ class KnowledgeGraphQueries:
 
         if method_names:
             removed = self.conn.execute_write(
-                f"""UNWIND $names AS n
-                MATCH (m:{METHOD} {{name: n}})
+                f"""UNWIND $names AS name
+                MATCH (m:{METHOD} {{name: name}})
                 WHERE NOT (m)<-[:{USES_METHOD}]-(:{PAPER})
                 DETACH DELETE m
-                RETURN count(m) AS n""",
+                RETURN count(m) AS deleted""",
                 {"names": method_names},
             )
-            methods_removed = removed[0]["n"] if removed else 0
+            methods_removed = removed[0]["deleted"] if removed else 0
 
         if author_names:
             removed = self.conn.execute_write(
-                f"""UNWIND $names AS n
-                MATCH (a:{AUTHOR} {{name: n}})
+                f"""UNWIND $names AS name
+                MATCH (a:{AUTHOR} {{name: name}})
                 WHERE NOT (a)<-[:{AUTHORED_BY}]-(:{PAPER})
                 DETACH DELETE a
-                RETURN count(a) AS n""",
+                RETURN count(a) AS deleted""",
                 {"names": author_names},
             )
-            authors_removed = removed[0]["n"] if removed else 0
+            authors_removed = removed[0]["deleted"] if removed else 0
 
         return {
             "papers": 1,
@@ -460,23 +467,25 @@ class KnowledgeGraphQueries:
         )
 
     async def aget_paper_details(self, document_id: str) -> dict:
+        """Async version of get_paper_details — matches on document_id or title."""
         if not document_id:
             return {"concepts": [], "methods": [], "findings": []}
         params = {"key": document_id}
+        lookup = f"(p:{PAPER}) WHERE p.document_id = $key OR p.title = $key"
         concepts = await self.conn.aexecute_read(
-            f"""MATCH (p:{PAPER} {{document_id: $key}})-[r:{DISCUSSES}]->(c:{CONCEPT})
+            f"""MATCH {lookup}-[r:{DISCUSSES}]->(c:{CONCEPT})
             RETURN c.name AS name, c.description AS description,
                    c.domain AS domain, r.depth AS depth
             ORDER BY r.depth, c.name""",
             params,
         )
         methods = await self.conn.aexecute_read(
-            f"""MATCH (p:{PAPER} {{document_id: $key}})-[:{USES_METHOD}]->(m:{METHOD})
+            f"""MATCH {lookup}-[:{USES_METHOD}]->(m:{METHOD})
             RETURN m.name AS name, m.description AS description""",
             params,
         )
         findings = await self.conn.aexecute_read(
-            f"""MATCH (p:{PAPER} {{document_id: $key}})-[:{HAS_FINDING}]->(f:{FINDING})
+            f"""MATCH {lookup}-[:{HAS_FINDING}]->(f:{FINDING})
             RETURN f.claim AS claim, f.evidence_type AS evidence_type""",
             params,
         )

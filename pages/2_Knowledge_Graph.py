@@ -45,8 +45,8 @@ col4.metric("🔬 Findings", stats.get("findings", 0))
 if stats.get("papers", 0) == 0:
     st.info(
         "No papers in the knowledge graph yet. "
-        "Populate Neo4j out-of-band (e.g. via Cypher or a batch script) — "
-        "this page is a read-only explorer."
+        "Upload and process PDFs from the main chat page — "
+        "papers are automatically indexed into the knowledge graph when Neo4j is running."
     )
     st.stop()
 
