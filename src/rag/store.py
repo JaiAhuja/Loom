@@ -166,7 +166,6 @@ class VectorStoreManager:
 
         Returns:
             Sorted list of dicts with keys: ``document_id``, ``title``,
-            ``paper`` (alias of ``title`` for backwards compat),
             ``domain``, ``chunk_count``.
         """
         try:
@@ -183,7 +182,6 @@ class VectorStoreManager:
                 entry = by_doc.setdefault(doc_id, {
                     "document_id": doc_id,
                     "title": title,
-                    "paper": title,
                     "domain": meta.get("domain", "Other"),
                     "chunk_count": 0,
                 })

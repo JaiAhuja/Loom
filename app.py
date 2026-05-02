@@ -38,7 +38,7 @@ configure_langsmith()
 graph_builder = GraphBuilder()
 
 
-@st.cache_resource(show_spinner=False)
+@st.cache_resource(show_spinner=False, max_entries=10)
 def _get_compiled_graph(
     use_rag: bool,
     use_graph: bool,
@@ -157,6 +157,14 @@ with st.sidebar:
             "relationships between your papers and concepts."
         )
 
+    use_rag_eval = st.toggle(
+        "📊 Show RAG Quality Scores",
+        value=False,
+        key="use_rag_eval_toggle",
+        help="After each RAG-assisted reply, run an LLM-as-Judge evaluation "
+        "(adds one extra LLM call per response).",
+    )
+
     # ----- Document Management (when RAG is on) -----
     collection_name = None
     paper_filter = None
@@ -270,14 +278,14 @@ with st.sidebar:
             ingest_id = generate_ingest_id()
             file_paths = []
             for file in uploaded_files:
-                file_bytes = file.getbuffer()
+                raw_bytes = bytes(file.getbuffer())  # single copy
                 identity = build_identity(
-                    file_bytes=bytes(file_bytes),
+                    file_bytes=raw_bytes,
                     original_filename=file.name,
                     ingest_id=ingest_id,
                 )
                 file_path = save_upload(
-                    file_bytes=bytes(file_bytes),
+                    file_bytes=raw_bytes,
                     identity=identity,
                     base_dir=pdf_dir,
                 )
@@ -475,8 +483,8 @@ if user_input := st.chat_input("Ask about any concept in DE, DS, or AI..."):
             except Exception as e:
                 response = format_chat_error(e, model)
 
-        # --- LLM-as-a-Judge evaluation (only when RAG tool was actually invoked) ---
-        if use_rag:
+        # --- LLM-as-a-Judge evaluation (opt-in; only when RAG tool was actually invoked) ---
+        if use_rag and use_rag_eval:
             retrieved_chunks = [
                 msg.content
                 for msg in result.get("messages", [])

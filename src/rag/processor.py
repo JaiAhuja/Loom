@@ -11,6 +11,51 @@ from src.llm import PaperProfile, extract_paper_profile, get_llm, get_embeddings
 logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# Granite tokenizer wrapper — defined at module level so it can be imported,
+# tested, and subclassed independently of DocumentProcessor.
+# ---------------------------------------------------------------------------
+def _build_granite_tokenizer():
+    """Construct a Docling-compatible tokenizer backed by the local Granite checkpoint.
+
+    Called once (lazily) when the HybridChunker is first needed.  The result
+    is stored on the DocumentProcessor instance to avoid repeated loading.
+    """
+    from docling_core.transforms.chunker.tokenizer.base import BaseTokenizer
+    from transformers import AutoTokenizer
+
+    hf_tokenizer = AutoTokenizer.from_pretrained(
+        "./granite_tokenizer",
+        trust_remote_code=True,
+        local_files_only=True,
+    )
+
+    class _LocalGraniteTokenizer(BaseTokenizer):
+        max_tokens: int = 4096
+        _hf_tokenizer: object = None
+
+        def __init__(self, hf_tok):
+            super().__init__(max_tokens=2048)
+            self._hf_tokenizer = hf_tok
+
+        def count_tokens(self, text: str) -> int:
+            return len(self._hf_tokenizer.encode(text, add_special_tokens=False))
+
+        def get_max_tokens(self) -> int:
+            return self.max_tokens
+
+        def get_tokenizer(self) -> object:
+            return self._hf_tokenizer
+
+        def __call__(self, text: str):
+            return self._hf_tokenizer(text, return_tensors="pt", add_special_tokens=False)
+
+        def encode(self, text: str) -> list[int]:
+            return self._hf_tokenizer.encode(text, add_special_tokens=False)
+
+    return _LocalGraniteTokenizer(hf_tokenizer)
+
+
 class DocumentProcessor:
     """Process PDF documents into chunks for vector storage.
 
@@ -49,48 +94,13 @@ class DocumentProcessor:
         """Lazy-initialize the Docling HybridChunker."""
         if self._chunker is None:
             from docling.chunking import HybridChunker
-            from docling_core.transforms.chunker.tokenizer.base import BaseTokenizer
-            from transformers import AutoTokenizer
 
-            hf_tokenizer = AutoTokenizer.from_pretrained(
-                "./granite_tokenizer",
-                trust_remote_code=True,
-                local_files_only=True
-                )
-            
-            class LocalGraniteTokenizer(BaseTokenizer):
-                max_tokens: int = 4096
-                _hf_tokenizer: any = None
-
-                def __init__(self, hf_tokenizer):
-                    super().__init__(max_tokens=2048)
-                    self._hf_tokenizer = hf_tokenizer
-
-                def count_tokens(self, text: str) -> int:
-                    """Required: Return the integer count of tokens."""
-                    return len(self._hf_tokenizer.encode(text, add_special_tokens=False))
-
-                def get_max_tokens(self) -> int:
-                    """Required: Return the max sequence length."""
-                    return self.max_tokens
-
-                def get_tokenizer(self) -> any:
-                    """Required: Return the underlying tokenizer object."""
-                    return self._hf_tokenizer
-
-                def __call__(self, text: str):
-                    return self._hf_tokenizer(text, return_tensors="pt", add_special_tokens=False)
-
-                def encode(self, text: str) -> list[int]:
-                    return self._hf_tokenizer.encode(text, add_special_tokens=False)
-
-            docling_tokenizer = LocalGraniteTokenizer(hf_tokenizer)
-            
+            docling_tokenizer = _build_granite_tokenizer()
             self._chunker = HybridChunker(
                 tokenizer=docling_tokenizer,
                 merge_peers=True,
-                max_tokens=8192
-)
+                max_tokens=8192,
+            )
         return self._chunker
 
     @property

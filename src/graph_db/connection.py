@@ -52,6 +52,7 @@ class Neo4jConnection:
             self._driver = GraphDatabase.driver(
                 self.uri,
                 auth=(self.username, self.password),
+                connection_acquisition_timeout=5.0,  # seconds; prevents indefinite sidebar block
             )
         return self._driver
 

@@ -19,8 +19,9 @@ def parse_llm_json(response_text: str) -> dict | None:
     Returns:
         dict: Parsed JSON data as a Python dictionary, or error dict if parsing fails
     """
-    # First, try to extract JSON from markdown code blocks
-    json_pattern = r'```json\s*([\s\S]*?)\s*```'
+    # Try to extract JSON from fenced code blocks.
+    # Matches ```json ... ``` first, then plain ``` ... ``` as a fallback.
+    json_pattern = r'```(?:json)?\s*([\s\S]*?)\s*```'
     match = re.search(json_pattern, response_text)
     
     if match:

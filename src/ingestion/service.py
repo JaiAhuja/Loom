@@ -6,6 +6,7 @@ called from CLI scripts, notebooks, or the Streamlit app alike.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from dataclasses import dataclass, field
@@ -24,6 +25,43 @@ if TYPE_CHECKING:
     from src.rag.store import VectorStoreManager
 
 logger = logging.getLogger(__name__)
+
+# Directory where Markdown caches and profile sidecars are stored.
+_TXT_DIR = os.path.join("data", "txt")
+
+
+def _profile_sidecar_path(document_id: str) -> str:
+    """Return the path for the JSON sidecar of a PaperProfile."""
+    return os.path.join(_TXT_DIR, f"{document_id}_profile.json")
+
+
+def _save_profile_sidecar(profile, document_id: str) -> None:
+    """Persist a PaperProfile as a JSON sidecar alongside the Markdown cache.
+
+    Silently swallows write errors so a disk hiccup never fails an ingestion run.
+    """
+    try:
+        os.makedirs(_TXT_DIR, exist_ok=True)
+        path = _profile_sidecar_path(document_id)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(profile.model_dump_json(indent=2))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Could not save profile sidecar for %s: %s", document_id, exc)
+
+
+def _load_profile_sidecar(document_id: str):
+    """Load a previously saved PaperProfile sidecar.  Returns None if absent."""
+    from src.llm.paper_profile import PaperProfile  # local import avoids circular dep
+    path = _profile_sidecar_path(document_id)
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return PaperProfile.model_validate_json(fh.read())
+    except Exception as exc:
+        logger.warning("Could not load profile sidecar %s: %s", path, exc)
+        return None
+
 
 @dataclass
 class FileResult:
@@ -225,10 +263,29 @@ class IngestionService:
 
             # KG write — uses the profile produced by the processor.
             profile = raw_result.get("profile")
+            if profile is not None:
+                # Always persist the profile so KG catchup can reuse it later.
+                _save_profile_sidecar(profile, identity.document_id)
             if self._kg_writer is not None and profile is not None:
                 try:
                     self._kg_writer.write_paper_profile(profile, identity.document_id)
                     fr.kg_indexed = True
+                    # Cross-finding edge detection (requires a model; silently skipped otherwise).
+                    if model is not None:
+                        try:
+                            n_links = self._kg_writer.link_findings(
+                                profile, identity.document_id, model
+                            )
+                            if n_links:
+                                logger.info(
+                                    "KG: wrote %d cross-finding edge(s) for %s",
+                                    n_links, identity.document_id,
+                                )
+                        except Exception as link_exc:
+                            logger.warning(
+                                "Cross-finding linking failed for %s: %s",
+                                identity.document_id, link_exc,
+                            )
                 except Exception as kg_exc:
                     logger.warning(
                         "KG indexing failed for %s (RAG indexing succeeded): %s",
@@ -278,43 +335,67 @@ class IngestionService:
         model: str | None,
         document_id: str,
     ) -> bool:
-        """Re-extract a paper profile from its saved Markdown and write it to Neo4j.
+        """Write a paper's KG data when RAG was indexed but Neo4j was unavailable.
 
-        Called when a paper is already in the RAG store but absent from the KG
-        (e.g. Neo4j was down or the KG toggle was off during the original ingest).
+        Prefers the saved PaperProfile sidecar (written during the original ingest)
+        over re-running the LLM.  Falls back to LLM re-extraction from the cached
+        Markdown only when the sidecar is absent, ensuring the KG always reflects
+        the same profile that was used to build the RAG chunks.
 
         Returns True on success, False on any failure.
         """
-        if self._kg_writer is None or model is None:
+        if self._kg_writer is None:
             return False
 
-        # Locate saved Markdown (written by DocumentProcessor alongside the PDF).
-        stem = os.path.splitext(file_name)[0]
-        txt_path = os.path.join("data", "txt", f"{stem}.md")
-        if not os.path.isfile(txt_path):
-            logger.warning(
-                "Saved Markdown not found at %s; cannot write KG for %s",
-                txt_path, document_id,
-            )
-            return False
+        # ── Prefer saved sidecar (same profile used during original ingest) ──
+        profile = _load_profile_sidecar(document_id)
 
-        try:
-            with open(txt_path, "r", encoding="utf-8") as fh:
-                markdown_text = fh.read()
-        except OSError as exc:
-            logger.warning("Could not read Markdown %s: %s", txt_path, exc)
-            return False
-
-        # Re-run profile extraction from the cached Markdown (no PDF re-conversion).
-        from src.llm import extract_paper_profile, get_llm  # local import to stay lean
-        llm = get_llm(model=model, temperature=0.1, require_json=True)
-        profile = extract_paper_profile(llm, markdown_text, file_name)
         if profile is None:
-            logger.warning("Profile extraction returned None for %s", document_id)
-            return False
+            # Sidecar absent (pre-dates this fix, or write failed).  Fall back to
+            # LLM re-extraction from the cached Markdown — requires model to be set.
+            if model is None:
+                logger.warning(
+                    "No profile sidecar for %s and no model provided; skipping KG write.",
+                    document_id,
+                )
+                return False
+
+            stem = os.path.splitext(file_name)[0]
+            txt_path = os.path.join(_TXT_DIR, f"{stem}.md")
+            if not os.path.isfile(txt_path):
+                logger.warning(
+                    "Sidecar and Markdown both absent for %s; cannot write KG.",
+                    document_id,
+                )
+                return False
+
+            try:
+                with open(txt_path, "r", encoding="utf-8") as fh:
+                    markdown_text = fh.read()
+            except OSError as exc:
+                logger.warning("Could not read Markdown %s: %s", txt_path, exc)
+                return False
+
+            from src.llm import extract_paper_profile, get_llm
+            llm = get_llm(model=model, temperature=0.1, require_json=True)
+            profile = extract_paper_profile(llm, markdown_text, file_name)
+            if profile is None:
+                logger.warning("Profile extraction returned None for %s", document_id)
+                return False
+
+            # Cache for future catchup attempts.
+            _save_profile_sidecar(profile, document_id)
 
         try:
             self._kg_writer.write_paper_profile(profile, document_id)
+            # Attempt cross-finding edge detection (needs the model).
+            if model is not None:
+                try:
+                    self._kg_writer.link_findings(profile, document_id, model)
+                except Exception as link_exc:
+                    logger.warning(
+                        "Cross-finding linking failed for %s: %s", document_id, link_exc
+                    )
             return True
         except Exception as exc:
             logger.warning("KG write failed for %s: %s", document_id, exc)

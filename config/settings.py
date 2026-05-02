@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     OLLAMA_MODEL: str = "granite4:tiny-h"
     OLLAMA_EMBEDDING_MODEL: str = "qwen3-embedding:4b"
     OLLAMA_TEMPERATURE: float = 0.1
+    OLLAMA_NUM_CTX: int = 32768  # context-window tokens; reduce for models with smaller limits
 
     # LangSmith
     LANGCHAIN_PROJECT: str = "Loom"

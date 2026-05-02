@@ -26,7 +26,7 @@ flowchart TB
     %% CONFIG
     %% ─────────────────────────────────────────
     subgraph CFG["⚙️ Configuration"]
-        SETTINGS["<b>config/settings.py</b><br/>Settings (Pydantic)<br/>• Ollama params<br/>• Neo4j creds<br/>• ChromaDB path<br/>• RAG tuning knobs<br/>• LangSmith config"]
+        SETTINGS["<b>config/settings.py</b><br/>Settings (Pydantic)<br/>• Ollama params (incl. OLLAMA_NUM_CTX)<br/>• Neo4j creds<br/>• ChromaDB path<br/>• RAG tuning knobs<br/>• LangSmith config"]
     end
 
     %% ─────────────────────────────────────────
@@ -35,7 +35,7 @@ flowchart TB
     subgraph INGEST["📥 Ingestion Pipeline"]
         direction TB
         IDENTITY["<b>ingestion/identity.py</b><br/>DocumentIdentity<br/>• Filename-based doc_id<br/>• MD5 hash for storage path<br/>• UUID ingest_id per session"]
-        INGSVC["<b>ingestion/service.py</b><br/>IngestionService<br/>• Orchestrates full pipeline<br/>• Dedup via content hash<br/>• Progress callbacks<br/>• Per-file result tracking"]
+        INGSVC["<b>ingestion/service.py</b><br/>IngestionService<br/>• Orchestrates full pipeline<br/>• Dedup via content hash<br/>• Profile sidecar save/load<br/>• Progress callbacks<br/>• Per-file result tracking"]
     end
 
     %% ─────────────────────────────────────────
@@ -61,9 +61,10 @@ flowchart TB
     subgraph KG["🔗 Knowledge Graph Layer"]
         direction TB
         CONN["<b>graph_db/connection.py</b><br/>Neo4jConnection<br/>• Lazy driver init<br/>• execute_read()<br/>• execute_write()<br/>• execute_write_tx()"]
-        SCHEMA["<b>graph_db/schema.py</b><br/>Schema constants<br/>• Node labels: Paper, Concept,<br/>  Method, Finding, Author<br/>• Rel types: DISCUSSES,<br/>  SUPPORTS, CONTRADICTS, etc.<br/>• initialize_schema()"]
+        SCHEMA["<b>graph_db/schema.py</b><br/>Schema constants<br/>• Node labels: Paper, Concept,<br/>  Method, Finding, Author<br/>• Rel types: DISCUSSES,<br/>  SUPPORTS, CONTRADICTS, etc.<br/>• finding_key (MD5 stable id)<br/>• CROSS_FINDING_RELS allow-list<br/>• initialize_schema()"]
         QUERIES["<b>graph_db/queries.py</b><br/>KnowledgeGraphQueries<br/>• get_all_papers()<br/>• get_paper_details()<br/>• get_shared_concepts()<br/>• get_graph_stats()<br/>• get_graph_for_visualization()<br/>• Contradiction/support/extend queries"]
         SERVICE["<b>graph_db/service.py</b><br/>GraphQueryService<br/>• 9 named intents<br/>• Parameter validation<br/>• No free-form Cypher"]
+        WRITER["<b>graph_db/writer.py</b><br/>KnowledgeGraphWriter<br/>• write_paper_profile()<br/>• link_findings() — cross-finding edges<br/>• Atomic _write_findings (DETACH+CREATE)<br/>• UNWIND batch for concepts &amp; methods<br/>• Idempotent MERGE writes"]
     end
 
     %% ─────────────────────────────────────────
@@ -104,6 +105,8 @@ flowchart TB
     INGSVC --> IDENTITY
     INGSVC -->|"process PDF"| PROCESSOR
     INGSVC -->|"store chunks"| STORE
+    INGSVC -->|"write KG + link findings"| WRITER
+    WRITER --> CONN
 
     %% UI → Agent
     APP -->|"user question"| BUILDER
@@ -174,7 +177,7 @@ flowchart TB
     class IDENTITY,INGSVC ingestNode
     class PROCESSOR,STORE ragNode
     class PROVIDER,PAPERPROFILE llmNode
-    class CONN,SCHEMA,QUERIES,SERVICE kgNode
+    class CONN,SCHEMA,QUERIES,SERVICE,WRITER kgNode
     class STATE,NODES,BUILDER agentNode
     class RAGTOOL,SAFEGRAPH toolNode
     class CHATSTORE,EVALUATION,JSONPARSER,UIMOD utilNode

@@ -22,6 +22,9 @@ SUPPORTS = "SUPPORTS"
 CONTRADICTS = "CONTRADICTS"
 EXTENDS = "EXTENDS"
 
+# Allow-list for cross-finding relationships (used as a guard in queries).
+CROSS_FINDING_RELS: frozenset[str] = frozenset({SUPPORTS, CONTRADICTS, EXTENDS})
+
 
 # ---------------------------------------------------------------------------
 # Concept identity helpers
@@ -41,6 +44,21 @@ def make_concept_key(name: str, domain: str) -> str:
     return f"{norm_domain}:{norm_name}"
 
 
+import hashlib as _hashlib
+
+
+def make_finding_key(paper_title: str, claim: str) -> str:
+    """Build a stable identity key for a Finding node.
+
+    The key is an MD5 hex of ``"<paper_title>||<claim>"`` (lowercased,
+    stripped) so two Finding nodes with identical claim text in the same
+    paper collapse onto the same key.  This enables ``MERGE`` semantics and
+    lets cross-finding edges reference nodes by a stable handle.
+    """
+    raw = f"{(paper_title or '').strip().lower()}||{(claim or '').strip().lower()}"
+    return _hashlib.md5(raw.encode(), usedforsecurity=False).hexdigest()
+
+
 def initialize_schema(conn: Neo4jConnection) -> None:
     """Create constraints and indexes for the knowledge graph.
 
@@ -55,6 +73,7 @@ def initialize_schema(conn: Neo4jConnection) -> None:
         f"CREATE CONSTRAINT IF NOT EXISTS FOR (c:{CONCEPT}) REQUIRE c.concept_key IS UNIQUE",
         f"CREATE CONSTRAINT IF NOT EXISTS FOR (m:{METHOD}) REQUIRE m.name IS UNIQUE",
         f"CREATE CONSTRAINT IF NOT EXISTS FOR (a:{AUTHOR}) REQUIRE a.name IS UNIQUE",
+        f"CREATE CONSTRAINT IF NOT EXISTS FOR (f:{FINDING}) REQUIRE f.finding_key IS UNIQUE",
     ]
     indexes = [
         f"CREATE INDEX IF NOT EXISTS FOR (p:{PAPER}) ON (p.title)",

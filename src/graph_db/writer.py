@@ -9,23 +9,67 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from langchain_core.prompts import ChatPromptTemplate
+
 from src.graph_db.connection import Neo4jConnection
 from src.graph_db.schema import (
     CONCEPT,
+    CONTRADICTS,
+    CROSS_FINDING_RELS,
     DISCUSSES,
+    EXTENDS,
     FINDING,
     HAS_FINDING,
     METHOD,
     PAPER,
+    SUPPORTS,
     USES_METHOD,
     initialize_schema,
     make_concept_key,
+    make_finding_key,
 )
 
 if TYPE_CHECKING:
     from src.llm.paper_profile import PaperProfile
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Prompt template for cross-finding relationship detection
+# ---------------------------------------------------------------------------
+
+_FINDING_LINKS_PROMPT = ChatPromptTemplate.from_messages([
+    (
+        "system",
+        """You are a scientific knowledge graph assistant specialising in cross-paper relationship detection.
+
+Your task is to compare two sets of research findings and identify semantic relationships between them.
+
+RELATIONSHIP TYPES:
+- SUPPORTS: The new finding confirms or reinforces the existing finding.
+- CONTRADICTS: The new finding directly opposes the existing finding.
+- EXTENDS: The new finding builds on, broadens, or adds nuance to the existing finding.
+
+OUTPUT INSTRUCTIONS:
+- Return ONLY a valid JSON array.
+- Each element must be an object with exactly three keys:
+    "source" — the finding_key of the new finding
+    "target" — the finding_key of the existing finding
+    "relation" — one of SUPPORTS, CONTRADICTS, or EXTENDS
+- If no relationships exist, return an empty array: []
+- No markdown fences, no prose, no commentary — raw JSON only."""
+    ),
+    (
+        "human",
+        """NEW FINDINGS (just added to the graph):
+{new_findings_json}
+
+EXISTING FINDINGS (from other papers already in the graph):
+{existing_findings_json}
+
+Identify all pairs where a new finding SUPPORTS, CONTRADICTS, or EXTENDS an existing finding."""
+    ),
+])
 
 
 class KnowledgeGraphWriter:
@@ -89,6 +133,74 @@ class KnowledgeGraphWriter:
             logger.error("KG write failed for document_id=%r: %s", document_id, exc)
             raise
 
+    def link_findings(
+        self,
+        profile: "PaperProfile",
+        document_id: str,
+        model: str,
+    ) -> int:
+        """Detect cross-paper SUPPORTS/CONTRADICTS/EXTENDS relationships between Finding nodes.
+
+        Compares the findings in *profile* against all findings already in the graph
+        from *other* papers.  One LLM call produces a JSON list of ``{source,
+        target, relation}`` triples that are then written as directed edges.
+
+        Args:
+            profile: The paper profile whose findings were just written.
+            document_id: The paper’s document_id (used to exclude its own findings).
+            model: Ollama model name used for the comparison LLM call.
+
+        Returns:
+            Number of cross-finding edges created.  Returns 0 if there are no
+            existing findings to compare against or if the LLM returns nothing useful.
+        """
+        paper_title = profile.title or document_id
+        new_findings = [
+            {
+                "finding_key": make_finding_key(paper_title, f.claim),
+                "claim": f.claim,
+                "evidence_type": f.evidence_type,
+            }
+            for f in profile.findings
+        ]
+        if not new_findings:
+            return 0
+
+        # Fetch existing findings from *other* papers.
+        rows = self._conn.execute_read(
+            f"""MATCH (p:{PAPER})-[:{HAS_FINDING}]->(f:{FINDING})
+            WHERE p.document_id <> $document_id
+            RETURN f.finding_key AS finding_key,
+                   f.claim        AS claim,
+                   f.evidence_type AS evidence_type,
+                   p.title        AS paper_title
+            LIMIT 200""",
+            {"document_id": document_id},
+        )
+        if not rows:
+            return 0
+
+        existing_findings = [
+            {
+                "finding_key": r["finding_key"],
+                "claim": r["claim"],
+                "evidence_type": r["evidence_type"],
+                "paper_title": r["paper_title"],
+            }
+            for r in rows
+            if r.get("finding_key")  # skip legacy nodes without a key
+        ]
+        if not existing_findings:
+            return 0
+
+        relations = self._call_llm_for_finding_links(
+            new_findings, existing_findings, model
+        )
+        if not relations:
+            return 0
+
+        return self._write_finding_links(relations)
+
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
@@ -118,56 +230,77 @@ class KnowledgeGraphWriter:
         )
 
     def _write_concepts(self, profile: "PaperProfile", document_id: str) -> None:
-        for concept in profile.concepts:
-            concept_key = make_concept_key(
-                concept.name, concept.domain or profile.domain
-            )
-            self._conn.execute_write(
-                f"""MERGE (c:{CONCEPT} {{concept_key: $concept_key}})
-                SET c.name        = $name,
-                    c.domain      = $domain,
-                    c.description = $description
-                WITH c
-                MATCH (p:{PAPER} {{document_id: $document_id}})
-                MERGE (p)-[r:{DISCUSSES}]->(c)
-                SET r.depth = $depth""",
-                {
-                    "concept_key": concept_key,
-                    "name": concept.name,
-                    "domain": concept.domain or profile.domain,
-                    "description": concept.description,
-                    "document_id": document_id,
-                    "depth": concept.depth,
-                },
-            )
+        """Upsert all concepts and DISCUSSES edges in a single round-trip via UNWIND."""
+        if not profile.concepts:
+            return
+        items = [
+            {
+                "concept_key": make_concept_key(c.name, c.domain or profile.domain),
+                "name": c.name,
+                "domain": c.domain or profile.domain,
+                "description": c.description,
+                "depth": c.depth,
+            }
+            for c in profile.concepts
+        ]
+        self._conn.execute_write(
+            f"""UNWIND $items AS item
+            MERGE (c:{CONCEPT} {{concept_key: item.concept_key}})
+            SET c.name        = item.name,
+                c.domain      = item.domain,
+                c.description = item.description
+            WITH c, item
+            MATCH (p:{PAPER} {{document_id: $document_id}})
+            MERGE (p)-[r:{DISCUSSES}]->(c)
+            SET r.depth = item.depth""",
+            {"items": items, "document_id": document_id},
+        )
 
     def _write_methods(self, profile: "PaperProfile", document_id: str) -> None:
-        for method in profile.methods:
-            self._conn.execute_write(
-                f"""MERGE (m:{METHOD} {{name: $name}})
-                SET m.description = $description
-                WITH m
-                MATCH (p:{PAPER} {{document_id: $document_id}})
-                MERGE (p)-[:{USES_METHOD}]->(m)""",
-                {
-                    "name": method.name,
-                    "description": method.description,
-                    "document_id": document_id,
-                },
-            )
+        """Upsert all methods and USES_METHOD edges in a single round-trip via UNWIND."""
+        if not profile.methods:
+            return
+        items = [
+            {"name": m.name, "description": m.description}
+            for m in profile.methods
+        ]
+        self._conn.execute_write(
+            f"""UNWIND $items AS item
+            MERGE (m:{METHOD} {{name: item.name}})
+            SET m.description = item.description
+            WITH m
+            MATCH (p:{PAPER} {{document_id: $document_id}})
+            MERGE (p)-[:{USES_METHOD}]->(m)""",
+            {"items": items, "document_id": document_id},
+        )
 
     def _write_findings(self, profile: "PaperProfile", document_id: str) -> None:
-        # Delete existing findings first so re-ingestion stays idempotent.
-        self._conn.execute_write(
-            f"""MATCH (p:{PAPER} {{document_id: $document_id}})-[:{HAS_FINDING}]->(f:{FINDING})
-            DETACH DELETE f""",
-            {"document_id": document_id},
-        )
+        """Delete existing findings and create new ones in a single transaction.
+
+        Each Finding node is stamped with a stable ``finding_key`` derived from
+        the paper title + claim so cross-finding edges can reference nodes by a
+        reliable identity handle.
+
+        Batching the DELETE and all CREATEs into one ``execute_write_tx`` call
+        prevents data loss if the process crashes between the delete and the
+        inserts (the old behaviour left the paper with zero findings).
+        """
         paper_title = profile.title or document_id
+
+        # Build the full batch: DELETE first, then one CREATE per finding.
+        queries: list[tuple[str, dict]] = [
+            (
+                f"""MATCH (p:{PAPER} {{document_id: $document_id}})-[:{HAS_FINDING}]->(f:{FINDING})
+                DETACH DELETE f""",
+                {"document_id": document_id},
+            )
+        ]
         for finding in profile.findings:
-            self._conn.execute_write(
+            finding_key = make_finding_key(paper_title, finding.claim)
+            queries.append((
                 f"""MATCH (p:{PAPER} {{document_id: $document_id}})
                 CREATE (f:{FINDING} {{
+                    finding_key:    $finding_key,
                     claim:          $claim,
                     evidence_type:  $evidence_type,
                     paper_title:    $paper_title
@@ -175,8 +308,77 @@ class KnowledgeGraphWriter:
                 CREATE (p)-[:{HAS_FINDING}]->(f)""",
                 {
                     "document_id": document_id,
+                    "finding_key": finding_key,
                     "claim": finding.claim,
                     "evidence_type": finding.evidence_type,
                     "paper_title": paper_title,
                 },
-            )
+            ))
+
+        self._conn.execute_write_tx(queries)
+
+    def _call_llm_for_finding_links(
+        self,
+        new_findings: list[dict],
+        existing_findings: list[dict],
+        model: str,
+    ) -> list[dict]:
+        """Ask an LLM to identify SUPPORTS/CONTRADICTS/EXTENDS pairs.
+
+        Uses the module-level ``_FINDING_LINKS_PROMPT`` (a ``ChatPromptTemplate``)
+        so the system role and human content are clearly separated and composable.
+
+        Returns a (possibly empty) list of ``{source, target, relation}`` dicts
+        where ``source`` and ``target`` are ``finding_key`` strings.
+        """
+        import json
+        from src.llm import get_llm
+        from src.utils.json_parser import parse_llm_json
+
+        llm = get_llm(model=model, temperature=0.0, require_json=True)
+        chain = _FINDING_LINKS_PROMPT | llm
+
+        try:
+            response = chain.invoke({
+                "new_findings_json": json.dumps(new_findings, indent=2),
+                "existing_findings_json": json.dumps(existing_findings, indent=2),
+            })
+            content = response.content
+            parsed = parse_llm_json(content)
+            if not isinstance(parsed, list):
+                return []
+            valid = [
+                r for r in parsed
+                if isinstance(r, dict)
+                and r.get("relation") in CROSS_FINDING_RELS
+                and r.get("source")
+                and r.get("target")
+            ]
+            return valid
+        except Exception as exc:
+            logger.warning("LLM call for finding links failed: %s", exc)
+            return []
+
+    def _write_finding_links(self, relations: list[dict]) -> int:
+        """Write cross-finding edges returned by the LLM.
+
+        Uses MERGE so repeated ingestion does not create duplicate edges.
+        Returns the number of edge write-attempts (some may merge onto existing).
+        """
+        queries: list[tuple[str, dict]] = []
+        for rel in relations:
+            rel_type = rel["relation"]  # already validated in CROSS_FINDING_RELS
+            queries.append((
+                f"""MATCH (src:{FINDING} {{finding_key: $source}})
+                MATCH (tgt:{FINDING} {{finding_key: $target}})
+                MERGE (src)-[:{rel_type}]->(tgt)""",
+                {"source": rel["source"], "target": rel["target"]},
+            ))
+        if not queries:
+            return 0
+        try:
+            self._conn.execute_write_tx(queries)
+            return len(queries)
+        except Exception as exc:
+            logger.warning("Writing finding links failed: %s", exc)
+            return 0
