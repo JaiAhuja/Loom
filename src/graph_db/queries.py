@@ -58,21 +58,24 @@ class KnowledgeGraphQueries:
 
         params = {"key": document_id}
         # Match by document_id first; fall back to title for agent callers.
-        lookup = f"(p:{PAPER}) WHERE p.document_id = $key OR p.title = $key"
+        where_clause = "WHERE p.document_id = $key OR p.title = $key"
         concepts = self.conn.execute_read(
-            f"""MATCH {lookup}-[r:{DISCUSSES}]->(c:{CONCEPT})
+            f"""MATCH (p:{PAPER})-[r:{DISCUSSES}]->(c:{CONCEPT})
+            {where_clause}
             RETURN c.name AS name, c.description AS description,
                    c.domain AS domain, r.depth AS depth
             ORDER BY r.depth, c.name""",
             params,
         )
         methods = self.conn.execute_read(
-            f"""MATCH {lookup}-[:{USES_METHOD}]->(m:{METHOD})
+            f"""MATCH (p:{PAPER})-[:{USES_METHOD}]->(m:{METHOD})
+            {where_clause}
             RETURN m.name AS name, m.description AS description""",
             params,
         )
         findings = self.conn.execute_read(
-            f"""MATCH {lookup}-[:{HAS_FINDING}]->(f:{FINDING})
+            f"""MATCH (p:{PAPER})-[:{HAS_FINDING}]->(f:{FINDING})
+            {where_clause}
             RETURN f.claim AS claim, f.evidence_type AS evidence_type""",
             params,
         )
@@ -178,11 +181,34 @@ class KnowledgeGraphQueries:
         nodes: list[dict] = []
         edges: list[dict] = []
         seen_nodes: set[str] = set()
+        paper_metadata: dict[str, dict] = {}  # paper_id -> {title, domain, year, summary, etc}
 
         allowed_rels = set(rel_types) if rel_types else None
 
         def _include(rel_label: str) -> bool:
             return allowed_rels is None or rel_label in allowed_rels
+
+        def _add_paper_node(doc_id: str, title: str, domain: str | None = None):
+            """Helper to add or update a paper node with cached metadata."""
+            paper_id = f"paper:{doc_id}"
+            if paper_id not in seen_nodes:
+                # Fetch full metadata for this paper
+                meta = self.get_paper_details(document_id=doc_id)
+                node_data = {
+                    "id": paper_id,
+                    "label": (title or "")[:40],
+                    "title": title,
+                    "group": "paper",
+                    "size": 25,
+                    "doc_id": doc_id,
+                    "domain": domain or "unknown",
+                    "concepts_count": len(meta.get("concepts", [])),
+                    "methods_count": len(meta.get("methods", [])),
+                    "findings_count": len(meta.get("findings", [])),
+                }
+                nodes.append(node_data)
+                seen_nodes.add(paper_id)
+                paper_metadata[paper_id] = node_data
 
         # --- Papers <-[DISCUSSES]-> Concepts (with optional domain/paper filters) ---
         filters = []
@@ -198,7 +224,7 @@ class KnowledgeGraphQueries:
         if _include(DISCUSSES):
             results = self.conn.execute_read(
                 f"""MATCH (p:{PAPER})-[r:{DISCUSSES}]->(c:{CONCEPT}){where_clause}
-                RETURN p.title AS paper, p.document_id AS paper_doc,
+                RETURN p.title AS paper, p.document_id AS paper_doc, p.domain AS paper_domain,
                        c.name AS concept, c.domain AS concept_domain,
                        r.depth AS depth
                 LIMIT $limit""",
@@ -210,14 +236,7 @@ class KnowledgeGraphQueries:
                 concept_id = f"concept:{row['concept']}"
 
                 if paper_id not in seen_nodes:
-                    nodes.append({
-                        "id": paper_id,
-                        "label": (row["paper"] or "")[:40],
-                        "title": row["paper"],
-                        "group": "paper",
-                        "size": 25,
-                    })
-                    seen_nodes.add(paper_id)
+                    _add_paper_node(row['paper_doc'] or row['paper'], row["paper"], row.get('paper_domain'))
 
                 if concept_id not in seen_nodes:
                     nodes.append({
@@ -257,7 +276,7 @@ class KnowledgeGraphQueries:
                         "dashes": True,
                     })
 
-        # --- Cross-paper finding relationships ---
+        # --- Cross-paper finding relationships (ALSO add paper nodes) ---
         finding_rel_specs = [
             (SUPPORTS,    "#4CAF50"),
             (CONTRADICTS, "#F44336"),
@@ -270,21 +289,26 @@ class KnowledgeGraphQueries:
                 f"""MATCH (f1:{FINDING})-[r:{rel_type}]->(f2:{FINDING})
                 RETURN f1.paper_title AS paper1, f2.paper_title AS paper2,
                        f1.paper_document_id AS paper1_doc,
-                       f2.paper_document_id AS paper2_doc,
-                       type(r) AS rel_type
+                       f2.paper_document_id AS paper2_doc
                 LIMIT 50"""
             )
             for row in finding_rels:
                 p1_id = f"paper:{row['paper1_doc'] or row['paper1']}"
                 p2_id = f"paper:{row['paper2_doc'] or row['paper2']}"
-                if p1_id in seen_nodes and p2_id in seen_nodes:
-                    edges.append({
-                        "from": p1_id,
-                        "to": p2_id,
-                        "label": row["rel_type"],
-                        "color": color,
-                        "width": 3,
-                    })
+                
+                # Ensure both paper nodes exist even if they don't have DISCUSSES edges
+                if p1_id not in seen_nodes:
+                    _add_paper_node(row['paper1_doc'] or row['paper1'], row["paper1"])
+                if p2_id not in seen_nodes:
+                    _add_paper_node(row['paper2_doc'] or row['paper2'], row["paper2"])
+                
+                edges.append({
+                    "from": p1_id,
+                    "to": p2_id,
+                    "label": rel_type,
+                    "color": color,
+                    "width": 3,
+                })
 
         return {"nodes": nodes, "edges": edges}
 
@@ -471,21 +495,24 @@ class KnowledgeGraphQueries:
         if not document_id:
             return {"concepts": [], "methods": [], "findings": []}
         params = {"key": document_id}
-        lookup = f"(p:{PAPER}) WHERE p.document_id = $key OR p.title = $key"
+        where_clause = "WHERE p.document_id = $key OR p.title = $key"
         concepts = await self.conn.aexecute_read(
-            f"""MATCH {lookup}-[r:{DISCUSSES}]->(c:{CONCEPT})
+            f"""MATCH (p:{PAPER})-[r:{DISCUSSES}]->(c:{CONCEPT})
+            {where_clause}
             RETURN c.name AS name, c.description AS description,
                    c.domain AS domain, r.depth AS depth
             ORDER BY r.depth, c.name""",
             params,
         )
         methods = await self.conn.aexecute_read(
-            f"""MATCH {lookup}-[:{USES_METHOD}]->(m:{METHOD})
+            f"""MATCH (p:{PAPER})-[:{USES_METHOD}]->(m:{METHOD})
+            {where_clause}
             RETURN m.name AS name, m.description AS description""",
             params,
         )
         findings = await self.conn.aexecute_read(
-            f"""MATCH {lookup}-[:{HAS_FINDING}]->(f:{FINDING})
+            f"""MATCH (p:{PAPER})-[:{HAS_FINDING}]->(f:{FINDING})
+            {where_clause}
             RETURN f.claim AS claim, f.evidence_type AS evidence_type""",
             params,
         )

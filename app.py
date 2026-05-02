@@ -69,6 +69,12 @@ def _get_compiled_graph(
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+# Initialize persistent feature toggles from session state
+if "use_rag_persistent" not in st.session_state:
+    st.session_state.use_rag_persistent = False
+if "use_graph_persistent" not in st.session_state:
+    st.session_state.use_graph_persistent = False
+
 
 # --- Sidebar ---
 with st.sidebar:
@@ -127,17 +133,23 @@ with st.sidebar:
 
     use_rag = st.toggle(
         "📄 Enable RAG (Document Q&A)",
-        value=False,
+        value=st.session_state.use_rag_persistent,
+        key="use_rag_toggle",
         help="Enable querying your uploaded PDF documents.",
     )
+    # Store the current state for persistence across pages
+    st.session_state.use_rag_persistent = use_rag
 
     use_graph = st.toggle(
         "🔗 Enable Knowledge Graph",
-        value=False,
+        value=st.session_state.use_graph_persistent,
+        key="use_graph_toggle",
         disabled=not neo4j_connected,
         help="Query the Neo4j knowledge graph for cross-paper relationships. "
         "Requires Neo4j to be running.",
     )
+    # Store the current state for persistence across pages
+    st.session_state.use_graph_persistent = use_graph
 
     if use_graph and neo4j_connected:
         st.info(
