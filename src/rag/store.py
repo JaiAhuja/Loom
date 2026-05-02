@@ -166,7 +166,6 @@ class VectorStoreManager:
 
         Returns:
             Sorted list of dicts with keys: ``document_id``, ``title``,
-            ``paper`` (alias of ``title`` for backwards compat),
             ``domain``, ``chunk_count``.
         """
         try:
@@ -183,7 +182,6 @@ class VectorStoreManager:
                 entry = by_doc.setdefault(doc_id, {
                     "document_id": doc_id,
                     "title": title,
-                    "paper": title,
                     "domain": meta.get("domain", "Other"),
                     "chunk_count": 0,
                 })
@@ -214,6 +212,16 @@ class VectorStoreManager:
         except Exception:
             logger.debug("Failed to list collections", exc_info=True)
             return []
+
+    def is_document_indexed(self, collection_name: str, document_id: str) -> bool:
+        """Return True if the collection already contains chunks for this document_id."""
+        try:
+            client = self._get_client_for_collection(collection_name)
+            collection = client.get_collection(collection_name)
+            results = collection.get(where={"document_id": document_id}, limit=1, include=[])
+            return bool(results.get("ids"))
+        except Exception:
+            return False
 
     def get_collection_count(self, collection_name: str) -> int:
         """Get the number of documents in a collection.

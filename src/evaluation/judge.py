@@ -131,3 +131,27 @@ class RAGJudge:
         except Exception as exc:
             logger.warning("RAG evaluation failed: %s", exc)
             return None
+
+    async def aevaluate(
+        self,
+        query: str,
+        context: str,
+        answer: str,
+        model: str | None = None,
+    ) -> EvaluationResult | None:
+        """Async version of evaluate. Uses ainvoke for non-blocking LLM call."""
+        try:
+            llm = get_llm(model=model, temperature=0.0, require_json=True)
+            chain = _JUDGE_PROMPT | llm
+            response = await chain.ainvoke({"query": query, "context": context, "answer": answer})
+            raw = response.content.strip()
+            data = json.loads(raw)
+            return EvaluationResult(
+                context_relevance=int(data.get("context_relevance", 0)),
+                faithfulness=int(data.get("faithfulness", 0)),
+                answer_relevance=int(data.get("answer_relevance", 0)),
+                reasoning=str(data.get("reasoning", "")),
+            )
+        except Exception as exc:
+            logger.warning("Async RAG evaluation failed: %s", exc)
+            return None

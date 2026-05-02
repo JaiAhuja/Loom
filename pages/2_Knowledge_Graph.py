@@ -16,6 +16,11 @@ st.set_page_config(
 st.title("Knowledge Graph Explorer")
 st.caption("Visualize and explore relationships between your research papers")
 
+# --- Display persistent toggle state from main page ---
+rag_status = "✅ RAG Enabled" if st.session_state.get("use_rag_persistent", False) else "⚫ RAG Disabled"
+kg_status = "✅ KG Enabled" if st.session_state.get("use_graph_persistent", False) else "⚫ KG Disabled"
+st.info(f"**Toggle Status:** {rag_status} · {kg_status} (configure on main page)")
+
 
 # --- Neo4j Connection (shared singleton — same driver used by app.py) ---
 try:
@@ -45,8 +50,8 @@ col4.metric("🔬 Findings", stats.get("findings", 0))
 if stats.get("papers", 0) == 0:
     st.info(
         "No papers in the knowledge graph yet. "
-        "Populate Neo4j out-of-band (e.g. via Cypher or a batch script) — "
-        "this page is a read-only explorer."
+        "Upload and process PDFs from the main chat page — "
+        "papers are automatically indexed into the knowledge graph when Neo4j is running."
     )
     st.stop()
 
@@ -206,6 +211,82 @@ with tab_graph:
             Blue dashed = related concepts · Red = contradicts · Orange = extends
             """
         )
+
+        # ---- Interactive Node Details ----
+        st.divider()
+        st.subheader("📊 Node Details Inspector")
+        st.caption("Select a paper node from the graph above to view its full details (concepts, methods, findings)")
+        
+        # Dropdown to select a paper node for detailed view
+        paper_nodes = [n for n in graph_data["nodes"] if n.get("group") == "paper"]
+        if paper_nodes:
+            def _format_paper_option(node):
+                return f"{node.get('label', 'Unknown')} ({node.get('domain', 'N/A')})"
+            
+            selected_node = st.selectbox(
+                "View Details",
+                options=paper_nodes,
+                format_func=_format_paper_option,
+                key="node_details_selector",
+            )
+            
+            if selected_node:
+                doc_id = selected_node.get("doc_id")
+                if doc_id:
+                    # Fetch full details for this paper
+                    details = queries.get_paper_details(document_id=doc_id)
+                    
+                    # Display header with metadata
+                    col1, col2, col3 = st.columns(3)
+                    col1.metric("💡 Concepts", len(details.get("concepts", [])))
+                    col2.metric("⚙️ Methods", len(details.get("methods", [])))
+                    col3.metric("🔬 Findings", len(details.get("findings", [])))
+                    
+                    # Display concepts, methods, findings in expandable sections
+                    det_col1, det_col2 = st.columns(2)
+                    
+                    with det_col1:
+                        with st.expander("💡 Concepts", expanded=True):
+                            concepts = details.get("concepts", [])
+                            if concepts:
+                                for c in concepts:
+                                    depth_badge = "🟢 Core" if c["depth"] == "core" else "⚪ Mentioned"
+                                    st.markdown(f"**{c['name']}** ({depth_badge})")
+                                    if c.get("description"):
+                                        st.caption(f"{c['description']}")
+                                    if c.get("domain"):
+                                        st.caption(f"Domain: `{c['domain']}`")
+                                    st.divider()
+                            else:
+                                st.caption("No concepts found for this paper")
+                        
+                        with st.expander("⚙️ Methods", expanded=False):
+                            methods = details.get("methods", [])
+                            if methods:
+                                for m in methods:
+                                    st.markdown(f"**{m['name']}**")
+                                    if m.get("description"):
+                                        st.caption(f"{m['description']}")
+                                    st.divider()
+                            else:
+                                st.caption("No methods found for this paper")
+                    
+                    with det_col2:
+                        with st.expander("🔬 Findings", expanded=False):
+                            findings = details.get("findings", [])
+                            if findings:
+                                for f in findings:
+                                    evidence_icon = {
+                                        "empirical": "📊",
+                                        "theoretical": "📐",
+                                        "survey": "📋"
+                                    }.get(f.get("evidence_type", ""), "📝")
+                                    st.markdown(f"{evidence_icon} {f['claim']}")
+                                    if f.get("evidence_type"):
+                                        st.caption(f"Type: `{f['evidence_type']}`")
+                                    st.divider()
+                            else:
+                                st.caption("No findings found for this paper")
 
 # --- Tab 2: Paper Explorer ---
 with tab_papers:

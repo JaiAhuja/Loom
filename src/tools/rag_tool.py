@@ -1,4 +1,4 @@
-from langchain_core.tools import tool
+from langchain_core.tools import StructuredTool
 
 from config.settings import settings
 from src.rag.store import VectorStoreManager
@@ -39,8 +39,7 @@ def create_rag_tool(
     if document_id:
         scope_label = f" (filtered to paper id: {document_id})"
 
-    @tool
-    def query_documents(query: str) -> str:
+    def _query_documents(query: str) -> str:
         """Search through uploaded PDF documents for relevant information.
 
         Use this tool to find specific content from the user's uploaded
@@ -75,4 +74,41 @@ def create_rag_tool(
         except Exception as e:
             return f"Document search failed: {str(e)}"
 
-    return query_documents
+    async def _aquery_documents(query: str) -> str:
+        """Async search through uploaded PDF documents for relevant information."""
+        try:
+            docs = await retriever.ainvoke(query)
+
+            if not docs:
+                return f"No relevant content found in the uploaded documents{scope_label}."
+
+            formatted = []
+            for i, doc in enumerate(docs, 1):
+                paper = doc.metadata.get("paper", doc.metadata.get("source", "Unknown"))
+                domain = doc.metadata.get("domain", "")
+                chunk_id = doc.metadata.get("paper_chunk", "?")
+                chunk_type = doc.metadata.get("chunk_type", "content")
+                type_badge = " [SUMMARY]" if chunk_type == "summary" else ""
+                domain_badge = f" | {domain}" if domain else ""
+                formatted.append(
+                    f"**Document {i}** (Paper: {paper}{domain_badge}, "
+                    f"Chunk: {chunk_id}{type_badge}):\n\n"
+                    f"{doc.page_content}"
+                )
+
+            return "\n\n---\n\n".join(formatted)
+
+        except Exception as e:
+            return f"Document search failed: {str(e)}"
+
+    return StructuredTool.from_function(
+        func=_query_documents,
+        coroutine=_aquery_documents,
+        name="query_documents",
+        description=(
+            "Search through uploaded PDF documents for relevant information. "
+            "Use this tool to find specific content from the user's uploaded "
+            "study materials, papers, or textbooks. Returns the most relevant "
+            "excerpts along with source document information."
+        ),
+    )

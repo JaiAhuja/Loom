@@ -21,10 +21,10 @@ def get_llm(
     if key not in _llm_cache:
         kwargs = {
             "model": resolved_model,
-            "streaming": True,
+            "streaming": False,
             "base_url": settings.OLLAMA_BASE_URL,
             "temperature": resolved_temp,
-            "num_ctx": 32768,  # Max context for granite4:tiny-h; adjust if using a different model
+            "num_ctx": settings.OLLAMA_NUM_CTX,
         }
         
         if require_json:

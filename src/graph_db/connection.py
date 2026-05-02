@@ -1,6 +1,6 @@
 import atexit
 
-from neo4j import GraphDatabase
+from neo4j import AsyncGraphDatabase, GraphDatabase
 
 from config.settings import settings
 
@@ -31,12 +31,19 @@ class Neo4jConnection:
         self.password = password or settings.NEO4J_PASSWORD
         self.database = database or getattr(settings, "NEO4J_DATABASE", None)
         self._driver = None
+        self._async_driver = None
 
     def __enter__(self):
         return self
 
     def __exit__(self, *args):
         self.close()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        await self.aclose()
 
     @property
     def driver(self):
@@ -45,8 +52,19 @@ class Neo4jConnection:
             self._driver = GraphDatabase.driver(
                 self.uri,
                 auth=(self.username, self.password),
+                connection_acquisition_timeout=5.0,  # seconds; prevents indefinite sidebar block
             )
         return self._driver
+
+    @property
+    def async_driver(self):
+        """Lazy-initialize the async Neo4j driver."""
+        if self._async_driver is None:
+            self._async_driver = AsyncGraphDatabase.driver(
+                self.uri,
+                auth=(self.username, self.password),
+            )
+        return self._async_driver
 
     def is_connected(self) -> bool:
         """Check if Neo4j is reachable."""
@@ -101,11 +119,63 @@ class Neo4jConnection:
         with self.driver.session(database=self.database) as session:
             session.execute_write(_work)
 
+    # ------------------------------------------------------------------
+    # Async counterparts
+    # ------------------------------------------------------------------
+
+    async def aexecute_read(self, query: str, parameters: dict = None) -> list[dict]:
+        """Async version of execute_read — uses a managed read transaction with auto-retry."""
+        async with self.async_driver.session(database=self.database) as session:
+
+            async def _work(tx):
+                result = await tx.run(query, parameters or {})
+                return await result.data()
+
+            return await session.execute_read(_work)
+
+    async def aexecute_write(self, query: str, parameters: dict = None) -> list[dict]:
+        """Async version of execute_write."""
+        async with self.async_driver.session(database=self.database) as session:
+
+            async def _work(tx):
+                result = await tx.run(query, parameters or {})
+                return await result.data()
+
+            return await session.execute_write(_work)
+
+    async def aexecute_write_tx(self, queries: list[tuple[str, dict]]) -> None:
+        """Async version of execute_write_tx."""
+        async with self.async_driver.session(database=self.database) as session:
+
+            async def _work(tx):
+                for q, params in queries:
+                    result = await tx.run(q, params or {})
+                    await result.consume()  # Exhaust cursor so the transaction can commit cleanly.
+
+            await session.execute_write(_work)
+
+    async def aclose(self) -> None:
+        """Async close of the async driver."""
+        if self._async_driver is not None:
+            await self._async_driver.close()
+            self._async_driver = None
+
     def close(self):
         """Close the Neo4j driver connection."""
         if self._driver is not None:
             self._driver.close()
             self._driver = None
+        if self._async_driver is not None:
+            import asyncio
+            driver = self._async_driver
+            self._async_driver = None
+            try:
+                loop = asyncio.get_running_loop()
+                # An event loop is already running — schedule the close as a fire-and-forget task.
+                loop.create_task(driver.close())
+            except RuntimeError:
+                # No running event loop (e.g. atexit, tests) — close synchronously.
+                asyncio.run(driver.close())
 
 
 # ---------------------------------------------------------------------------

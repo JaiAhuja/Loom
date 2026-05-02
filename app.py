@@ -38,7 +38,7 @@ configure_langsmith()
 graph_builder = GraphBuilder()
 
 
-@st.cache_resource(show_spinner=False)
+@st.cache_resource(show_spinner=False, max_entries=10)
 def _get_compiled_graph(
     use_rag: bool,
     use_graph: bool,
@@ -68,6 +68,14 @@ def _get_compiled_graph(
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
+
+# Initialize persistent feature toggles from session state
+if "use_rag_persistent" not in st.session_state:
+    st.session_state.use_rag_persistent = False
+if "use_graph_persistent" not in st.session_state:
+    st.session_state.use_graph_persistent = False
+if "use_rag_eval_persistent" not in st.session_state:
+    st.session_state.use_rag_eval_persistent = False
 
 
 # --- Sidebar ---
@@ -127,23 +135,39 @@ with st.sidebar:
 
     use_rag = st.toggle(
         "📄 Enable RAG (Document Q&A)",
-        value=False,
+        value=st.session_state.use_rag_persistent,
+        key="use_rag_toggle",
         help="Enable querying your uploaded PDF documents.",
     )
+    # Store the current state for persistence across pages
+    st.session_state.use_rag_persistent = use_rag
 
     use_graph = st.toggle(
         "🔗 Enable Knowledge Graph",
-        value=False,
+        value=st.session_state.use_graph_persistent,
+        key="use_graph_toggle",
         disabled=not neo4j_connected,
         help="Query the Neo4j knowledge graph for cross-paper relationships. "
         "Requires Neo4j to be running.",
     )
+    # Store the current state for persistence across pages
+    st.session_state.use_graph_persistent = use_graph
 
     if use_graph and neo4j_connected:
         st.info(
             "💡 Knowledge graph is **ON**. The agent can explore "
             "relationships between your papers and concepts."
         )
+
+    use_rag_eval = st.toggle(
+        "📊 Show RAG Quality Scores",
+        value=st.session_state.use_rag_eval_persistent,
+        key="use_rag_eval_toggle",
+        help="After each RAG-assisted reply, run an LLM-as-Judge evaluation "
+        "(adds one extra LLM call per response).",
+    )
+    # Store the current state for persistence across pages
+    st.session_state.use_rag_eval_persistent = use_rag_eval
 
     # ----- Document Management (when RAG is on) -----
     collection_name = None
@@ -258,14 +282,14 @@ with st.sidebar:
             ingest_id = generate_ingest_id()
             file_paths = []
             for file in uploaded_files:
-                file_bytes = file.getbuffer()
+                raw_bytes = bytes(file.getbuffer())  # single copy
                 identity = build_identity(
-                    file_bytes=bytes(file_bytes),
+                    file_bytes=raw_bytes,
                     original_filename=file.name,
                     ingest_id=ingest_id,
                 )
                 file_path = save_upload(
-                    file_bytes=bytes(file_bytes),
+                    file_bytes=raw_bytes,
                     identity=identity,
                     base_dir=pdf_dir,
                 )
@@ -285,6 +309,7 @@ with st.sidebar:
             svc = IngestionService(
                 processor=processor,
                 store=store,
+                neo4j_conn=get_neo4j_connection() if neo4j_connected else None,
             )
             ing_result = svc.ingest_files(
                 file_paths=file_paths,
@@ -295,10 +320,17 @@ with st.sidebar:
 
             # Report per-file outcomes
             for fr in ing_result.file_results:
-                if fr.success:
+                if fr.skipped:
+                    kg_label = " + KG" if fr.kg_indexed else ""
+                    st.info(
+                        f"⏭️ Already in RAG{kg_label}: **{fr.paper_title}** "
+                        f"({fr.content_chunks} chunks already stored)"
+                    )
+                elif fr.success:
                     summary_label = " + summary" if fr.has_summary else ""
+                    kg_label = " + KG" if fr.kg_indexed else ""
                     st.success(
-                        f"✅ RAG: **{fr.paper_title}** → "
+                        f"✅ RAG{kg_label}: **{fr.paper_title}** → "
                         f"{fr.content_chunks} chunks{summary_label}"
                     )
                 else:
@@ -455,8 +487,8 @@ if user_input := st.chat_input("Ask about any concept in DE, DS, or AI..."):
             except Exception as e:
                 response = format_chat_error(e, model)
 
-        # --- LLM-as-a-Judge evaluation (only when RAG tool was actually invoked) ---
-        if use_rag:
+        # --- LLM-as-a-Judge evaluation (opt-in; only when RAG tool was actually invoked) ---
+        if use_rag and use_rag_eval:
             retrieved_chunks = [
                 msg.content
                 for msg in result.get("messages", [])

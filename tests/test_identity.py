@@ -43,7 +43,6 @@ def test_compute_file_hash(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_make_document_id():
-    sha = "abc123"
     assert make_document_id("Self-Supervised Learning.pdf") == "Self-Supervised Learning"
 
 

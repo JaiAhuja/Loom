@@ -11,6 +11,7 @@ from src.graph_db.schema import (
     METHOD,
     PAPER,
     RELATED_TO,
+    SUBTOPIC_OF,
     SUPPORTS,
     USES_METHOD,
 )
@@ -47,25 +48,35 @@ class KnowledgeGraphQueries:
         )
 
     def get_paper_details(self, document_id: str) -> dict:
-        """Get full details for a paper including all linked entities."""
+        """Get full details for a paper including all linked entities.
+
+        ``document_id`` may be the canonical filename-derived ID **or** the
+        paper's title — both are matched so the agent (which sees titles) and
+        the UI (which uses document_ids) call the same method correctly.
+        """
         if not document_id:
             return {"concepts": [], "methods": [], "findings": []}
 
         params = {"key": document_id}
+        # Match by document_id first; fall back to title for agent callers.
+        where_clause = "WHERE p.document_id = $key OR p.title = $key"
         concepts = self.conn.execute_read(
-            f"""MATCH (p:{PAPER} {{document_id: $key}})-[r:{DISCUSSES}]->(c:{CONCEPT})
+            f"""MATCH (p:{PAPER})-[r:{DISCUSSES}]->(c:{CONCEPT})
+            {where_clause}
             RETURN c.name AS name, c.description AS description,
                    c.domain AS domain, r.depth AS depth
             ORDER BY r.depth, c.name""",
             params,
         )
         methods = self.conn.execute_read(
-            f"""MATCH (p:{PAPER} {{document_id: $key}})-[:{USES_METHOD}]->(m:{METHOD})
+            f"""MATCH (p:{PAPER})-[:{USES_METHOD}]->(m:{METHOD})
+            {where_clause}
             RETURN m.name AS name, m.description AS description""",
             params,
         )
         findings = self.conn.execute_read(
-            f"""MATCH (p:{PAPER} {{document_id: $key}})-[:{HAS_FINDING}]->(f:{FINDING})
+            f"""MATCH (p:{PAPER})-[:{HAS_FINDING}]->(f:{FINDING})
+            {where_clause}
             RETURN f.claim AS claim, f.evidence_type AS evidence_type""",
             params,
         )
@@ -116,14 +127,47 @@ class KnowledgeGraphQueries:
         )
 
     def get_related_concepts(self, concept_name: str) -> list[dict]:
-        """Get concepts related to a given concept."""
+        """Get concepts related to a given concept.
+        
+        Returns all concepts connected via RELATED_TO, SUBTOPIC_OF, or EXTENDS relationships.
+        """
         return self.conn.execute_read(
-            f"""MATCH (c1:{CONCEPT} {{name: $name}})-[r:{RELATED_TO}]-(c2:{CONCEPT})
+            f"""MATCH (c1:{CONCEPT} {{name: $name}})-[r]-(c2:{CONCEPT})
+            WHERE type(r) IN ['RELATED_TO', 'SUBTOPIC_OF', 'EXTENDS']
             RETURN c2.name AS name, c2.description AS description,
-                   r.strength AS strength
-            ORDER BY r.strength DESC""",
+                   c2.domain AS domain, type(r) AS relation_type
+            ORDER BY c2.name""",
             {"name": concept_name},
         )
+
+    def get_concept_hierarchy(self, concept_name: str) -> dict:
+        """Get hierarchical relationships for a concept.
+        
+        Returns:
+            - 'prerequisites': concepts this one depends on (SUBTOPIC_OF incoming)
+            - 'related': related concepts (RELATED_TO both directions)
+            - 'extensions': concepts that extend this one (EXTENDS outgoing)
+        """
+        prerequisites = self.conn.execute_read(
+            f"""MATCH (c1:{CONCEPT})<-[:{SUBTOPIC_OF}]-(c2:{CONCEPT} {{name: $name}})
+            RETURN c1.name AS name, c1.description AS description, c1.domain AS domain""",
+            {"name": concept_name},
+        )
+        related = self.conn.execute_read(
+            f"""MATCH (c1:{CONCEPT} {{name: $name}})-[:{RELATED_TO}]-(c2:{CONCEPT})
+            RETURN c2.name AS name, c2.description AS description, c2.domain AS domain""",
+            {"name": concept_name},
+        )
+        extensions = self.conn.execute_read(
+            f"""MATCH (c1:{CONCEPT} {{name: $name}})-[:{EXTENDS}]->(c2:{CONCEPT})
+            RETURN c2.name AS name, c2.description AS description, c2.domain AS domain""",
+            {"name": concept_name},
+        )
+        return {
+            "prerequisites": prerequisites or [],
+            "related": related or [],
+            "extensions": extensions or [],
+        }
 
     # ----- Graph Overview -----
 
@@ -171,11 +215,34 @@ class KnowledgeGraphQueries:
         nodes: list[dict] = []
         edges: list[dict] = []
         seen_nodes: set[str] = set()
+        paper_metadata: dict[str, dict] = {}  # paper_id -> {title, domain, year, summary, etc}
 
         allowed_rels = set(rel_types) if rel_types else None
 
         def _include(rel_label: str) -> bool:
             return allowed_rels is None or rel_label in allowed_rels
+
+        def _add_paper_node(doc_id: str, title: str, domain: str | None = None):
+            """Helper to add or update a paper node with cached metadata."""
+            paper_id = f"paper:{doc_id}"
+            if paper_id not in seen_nodes:
+                # Fetch full metadata for this paper
+                meta = self.get_paper_details(document_id=doc_id)
+                node_data = {
+                    "id": paper_id,
+                    "label": (title or "")[:40],
+                    "title": title,
+                    "group": "paper",
+                    "size": 25,
+                    "doc_id": doc_id,
+                    "domain": domain or "unknown",
+                    "concepts_count": len(meta.get("concepts", [])),
+                    "methods_count": len(meta.get("methods", [])),
+                    "findings_count": len(meta.get("findings", [])),
+                }
+                nodes.append(node_data)
+                seen_nodes.add(paper_id)
+                paper_metadata[paper_id] = node_data
 
         # --- Papers <-[DISCUSSES]-> Concepts (with optional domain/paper filters) ---
         filters = []
@@ -191,7 +258,7 @@ class KnowledgeGraphQueries:
         if _include(DISCUSSES):
             results = self.conn.execute_read(
                 f"""MATCH (p:{PAPER})-[r:{DISCUSSES}]->(c:{CONCEPT}){where_clause}
-                RETURN p.title AS paper, p.document_id AS paper_doc,
+                RETURN p.title AS paper, p.document_id AS paper_doc, p.domain AS paper_domain,
                        c.name AS concept, c.domain AS concept_domain,
                        r.depth AS depth
                 LIMIT $limit""",
@@ -203,14 +270,7 @@ class KnowledgeGraphQueries:
                 concept_id = f"concept:{row['concept']}"
 
                 if paper_id not in seen_nodes:
-                    nodes.append({
-                        "id": paper_id,
-                        "label": (row["paper"] or "")[:40],
-                        "title": row["paper"],
-                        "group": "paper",
-                        "size": 25,
-                    })
-                    seen_nodes.add(paper_id)
+                    _add_paper_node(row['paper_doc'] or row['paper'], row["paper"], row.get('paper_domain'))
 
                 if concept_id not in seen_nodes:
                     nodes.append({
@@ -250,7 +310,7 @@ class KnowledgeGraphQueries:
                         "dashes": True,
                     })
 
-        # --- Cross-paper finding relationships ---
+        # --- Cross-paper finding relationships (ALSO add paper nodes) ---
         finding_rel_specs = [
             (SUPPORTS,    "#4CAF50"),
             (CONTRADICTS, "#F44336"),
@@ -263,21 +323,26 @@ class KnowledgeGraphQueries:
                 f"""MATCH (f1:{FINDING})-[r:{rel_type}]->(f2:{FINDING})
                 RETURN f1.paper_title AS paper1, f2.paper_title AS paper2,
                        f1.paper_document_id AS paper1_doc,
-                       f2.paper_document_id AS paper2_doc,
-                       type(r) AS rel_type
+                       f2.paper_document_id AS paper2_doc
                 LIMIT 50"""
             )
             for row in finding_rels:
                 p1_id = f"paper:{row['paper1_doc'] or row['paper1']}"
                 p2_id = f"paper:{row['paper2_doc'] or row['paper2']}"
-                if p1_id in seen_nodes and p2_id in seen_nodes:
-                    edges.append({
-                        "from": p1_id,
-                        "to": p2_id,
-                        "label": row["rel_type"],
-                        "color": color,
-                        "width": 3,
-                    })
+                
+                # Ensure both paper nodes exist even if they don't have DISCUSSES edges
+                if p1_id not in seen_nodes:
+                    _add_paper_node(row['paper1_doc'] or row['paper1'], row["paper1"])
+                if p2_id not in seen_nodes:
+                    _add_paper_node(row['paper2_doc'] or row['paper2'], row["paper2"])
+                
+                edges.append({
+                    "from": p1_id,
+                    "to": p2_id,
+                    "label": rel_type,
+                    "color": color,
+                    "width": 3,
+                })
 
         return {"nodes": nodes, "edges": edges}
 
@@ -344,25 +409,25 @@ class KnowledgeGraphQueries:
 
         if method_names:
             removed = self.conn.execute_write(
-                f"""UNWIND $names AS n
-                MATCH (m:{METHOD} {{name: n}})
+                f"""UNWIND $names AS name
+                MATCH (m:{METHOD} {{name: name}})
                 WHERE NOT (m)<-[:{USES_METHOD}]-(:{PAPER})
                 DETACH DELETE m
-                RETURN count(m) AS n""",
+                RETURN count(m) AS deleted""",
                 {"names": method_names},
             )
-            methods_removed = removed[0]["n"] if removed else 0
+            methods_removed = removed[0]["deleted"] if removed else 0
 
         if author_names:
             removed = self.conn.execute_write(
-                f"""UNWIND $names AS n
-                MATCH (a:{AUTHOR} {{name: n}})
+                f"""UNWIND $names AS name
+                MATCH (a:{AUTHOR} {{name: name}})
                 WHERE NOT (a)<-[:{AUTHORED_BY}]-(:{PAPER})
                 DETACH DELETE a
-                RETURN count(a) AS n""",
+                RETURN count(a) AS deleted""",
                 {"names": author_names},
             )
-            authors_removed = removed[0]["n"] if removed else 0
+            authors_removed = removed[0]["deleted"] if removed else 0
 
         return {
             "papers": 1,
@@ -443,3 +508,103 @@ class KnowledgeGraphQueries:
             if bucket in entry:
                 entry[bucket] += row["cnt"]
         return list(matrix.values())
+
+    # ------------------------------------------------------------------
+    # Async counterparts (used by the LangGraph agent path)
+    # ------------------------------------------------------------------
+
+    async def aget_all_papers(self) -> list[dict]:
+        return await self.conn.aexecute_read(
+            f"""MATCH (p:{PAPER})
+            OPTIONAL MATCH (p)-[:{DISCUSSES}]->(c:{CONCEPT})
+            RETURN p.document_id AS document_id, p.title AS title,
+                   p.domain AS domain, p.year AS year,
+                   p.summary AS summary, p.authors_str AS authors,
+                   count(c) AS concept_count
+            ORDER BY p.title"""
+        )
+
+    async def aget_paper_details(self, document_id: str) -> dict:
+        """Async version of get_paper_details — matches on document_id or title."""
+        if not document_id:
+            return {"concepts": [], "methods": [], "findings": []}
+        params = {"key": document_id}
+        where_clause = "WHERE p.document_id = $key OR p.title = $key"
+        concepts = await self.conn.aexecute_read(
+            f"""MATCH (p:{PAPER})-[r:{DISCUSSES}]->(c:{CONCEPT})
+            {where_clause}
+            RETURN c.name AS name, c.description AS description,
+                   c.domain AS domain, r.depth AS depth
+            ORDER BY r.depth, c.name""",
+            params,
+        )
+        methods = await self.conn.aexecute_read(
+            f"""MATCH (p:{PAPER})-[:{USES_METHOD}]->(m:{METHOD})
+            {where_clause}
+            RETURN m.name AS name, m.description AS description""",
+            params,
+        )
+        findings = await self.conn.aexecute_read(
+            f"""MATCH (p:{PAPER})-[:{HAS_FINDING}]->(f:{FINDING})
+            {where_clause}
+            RETURN f.claim AS claim, f.evidence_type AS evidence_type""",
+            params,
+        )
+        return {"concepts": concepts, "methods": methods, "findings": findings}
+
+    async def aget_shared_concepts(self, paper_a: str, paper_b: str) -> list[dict]:
+        return await self.conn.aexecute_read(
+            f"""MATCH (p1:{PAPER} {{title: $a}})-[:{DISCUSSES}]->(c:{CONCEPT})<-[:{DISCUSSES}]-(p2:{PAPER} {{title: $b}})
+            RETURN c.name AS concept, c.description AS description, c.domain AS domain""",
+            {"a": paper_a, "b": paper_b},
+        )
+
+    async def aget_cross_paper_findings(self, rel_type: str) -> list[dict]:
+        allowed = {SUPPORTS, CONTRADICTS, EXTENDS}
+        if rel_type not in allowed:
+            raise ValueError(
+                f"Unsupported rel_type {rel_type!r}; expected one of {sorted(allowed)}"
+            )
+        return await self.conn.aexecute_read(
+            f"""MATCH (f1:{FINDING})-[r:{rel_type}]->(f2:{FINDING})
+            RETURN f1.claim AS finding_1, f1.paper_title AS paper_1,
+                   f2.claim AS finding_2, f2.paper_title AS paper_2,
+                   r.reason AS reason"""
+        )
+
+    async def aget_all_concepts(self) -> list[dict]:
+        return await self.conn.aexecute_read(
+            f"""MATCH (c:{CONCEPT})
+            OPTIONAL MATCH (p:{PAPER})-[:{DISCUSSES}]->(c)
+            RETURN c.name AS name, c.description AS description,
+                   c.domain AS domain, count(p) AS paper_count
+            ORDER BY paper_count DESC"""
+        )
+
+    async def aget_concept_papers(self, concept_name: str) -> list[dict]:
+        return await self.conn.aexecute_read(
+            f"""MATCH (p:{PAPER})-[r:{DISCUSSES}]->(c:{CONCEPT} {{name: $name}})
+            RETURN p.title AS title, p.domain AS domain, r.depth AS depth""",
+            {"name": concept_name},
+        )
+
+    async def aget_related_concepts(self, concept_name: str) -> list[dict]:
+        return await self.conn.aexecute_read(
+            f"""MATCH (c1:{CONCEPT} {{name: $name}})-[r:{RELATED_TO}]-(c2:{CONCEPT})
+            RETURN c2.name AS name, c2.description AS description,
+                   r.strength AS strength
+            ORDER BY r.strength DESC""",
+            {"name": concept_name},
+        )
+
+    async def aget_graph_stats(self) -> dict:
+        result = await self.conn.aexecute_read(
+            f"""OPTIONAL MATCH (p:{PAPER}) WITH count(p) AS papers
+            OPTIONAL MATCH (c:{CONCEPT}) WITH papers, count(c) AS concepts
+            OPTIONAL MATCH (m:{METHOD}) WITH papers, concepts, count(m) AS methods
+            OPTIONAL MATCH (f:{FINDING}) WITH papers, concepts, methods, count(f) AS findings
+            RETURN papers, concepts, methods, findings"""
+        )
+        if result:
+            return result[0]
+        return {"papers": 0, "concepts": 0, "methods": 0, "findings": 0}

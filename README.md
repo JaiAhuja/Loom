@@ -81,11 +81,13 @@ When PDFs are uploaded they pass through a deterministic identity pipeline:
 2. **Identity assigned** — filename stem → `document_id` (e.g. `My-Paper` → `My Paper`); MD5 hash → content-addressed storage path; unique `ingest_id` per session
 3. **Docling** converts PDF to Markdown (shared with RAG pipeline)
 4. **LLM extracts** structured entities: papers, concepts, methods, findings, authors
-5. **Entity resolution** — LLM fuzzy-matches against existing graph entities to avoid duplicates
-6. **Paper node keyed by `document_id`** — distinct PDFs with the same title stay separate
-7. **Concepts scoped by domain** — `concept_key` = `normalized_domain:name` prevents cross-domain collisions
-8. **Neo4j stores** nodes and relationships (DISCUSSES, SUPPORTS, CONTRADICTS, EXTENDS, etc.)
-9. **Cross-paper detection** — automatic discovery of supporting, contradicting, and extending findings
+5. **Profile sidecar saved** — the `PaperProfile` is persisted as `data/txt/<document_id>_profile.json` alongside the Markdown cache. This ensures that if the KG index needs to be rebuilt later (e.g. Neo4j was down), the **exact same profile** is reused rather than re-running the LLM with potentially different output.
+6. **Entity resolution** — LLM fuzzy-matches against existing graph entities to avoid duplicates
+7. **Paper node keyed by `document_id`** — distinct PDFs with the same title stay separate
+8. **Concepts scoped by domain** — `concept_key` = `normalized_domain:name` prevents cross-domain collisions
+9. **Finding nodes have stable keys** — each `Finding` node is stamped with a `finding_key` (MD5 of `paper_title + claim`) that enables idempotent `MERGE` and stable cross-finding edge creation
+10. **Cross-finding detection** — after each paper is written, one LLM call compares its findings against findings already in the graph from other papers and writes directed `SUPPORTS`, `CONTRADICTS`, or `EXTENDS` edges
+11. **Neo4j stores** nodes and relationships (DISCUSSES, HAS_FINDING, SUPPORTS, CONTRADICTS, EXTENDS, etc.)
 
 ### Graph Query Safety
 
@@ -272,6 +274,7 @@ loom/
 │   ├── chat_history/         # Saved conversation JSON files
 │   ├── pdfs/                 # Uploaded PDF storage (content-addressed)
 │   ├── txt/                  # Docling-extracted Markdown text files
+│   │                         #   └─ <document_id>_profile.json — profile sidecar (one per paper)
 │   └── chroma_db/            # ChromaDB persistent storage
 │
 ├── outputs/                  # Saved Markdown exports
@@ -290,6 +293,7 @@ All settings are managed via environment variables (`.env` file):
 | `OLLAMA_MODEL` | `granite4:tiny-h` | Default chat model |
 | `OLLAMA_EMBEDDING_MODEL` | `qwen3-embedding:4b` | Embedding model (for RAG) |
 | `OLLAMA_TEMPERATURE` | `0.1` | Default temperature |
+| `OLLAMA_NUM_CTX` | `32768` | Context-window token limit (reduce for small models) |
 | `LANGSMITH_API_KEY` | *(empty)* | LangSmith API key (optional) |
 | `LANGCHAIN_PROJECT` | `Loom` | LangSmith project name |
 | `LANGSMITH_TRACING` | `false` | Enable LangSmith tracing |
