@@ -52,7 +52,11 @@ Ingestion: PDF ─► IngestionService (src/ingestion/service.py)
                   ├─► DocumentIdentity (ingestion/identity.py)   # filename → document_id, MD5 → storage path
                   ├─► DocumentProcessor (rag/processor.py)       # Docling → Markdown → HybridChunker chunks
                   │     └─► extract_paper_profile (llm/paper_profile.py)  # title/domain/concepts/methods/findings
-                  └─► VectorStoreManager (rag/store.py)          # idempotent upsert by deterministic chunk_id
+                  ├─► VectorStoreManager (rag/store.py)          # idempotent upsert by deterministic chunk_id
+                  └─► KnowledgeGraphWriter (graph_db/writer.py)  # write profile + link findings + link concepts
+                        ├─► write_paper_profile()                # create Paper, Concept, Method, Finding nodes
+                        ├─► link_findings()                      # LLM detects SUPPORTS/CONTRADICTS/EXTENDS between findings
+                        └─► link_concepts()                      # LLM detects RELATED_TO/SUBTOPIC_OF/EXTENDS between concepts
 
 LLM: src/llm/provider.py — cached get_llm() / get_embeddings() factories
 Domain: src/domain/{paper,taxonomy}.py — Paper model + canonical domain taxonomy (shared by RAG + KG)

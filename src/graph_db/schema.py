@@ -25,6 +25,9 @@ EXTENDS = "EXTENDS"
 # Allow-list for cross-finding relationships (used as a guard in queries).
 CROSS_FINDING_RELS: frozenset[str] = frozenset({SUPPORTS, CONTRADICTS, EXTENDS})
 
+# Allow-list for cross-concept relationships (used as a guard in queries).
+CROSS_CONCEPT_RELS: frozenset[str] = frozenset({RELATED_TO, SUBTOPIC_OF, EXTENDS})
+
 
 # ---------------------------------------------------------------------------
 # Concept identity helpers

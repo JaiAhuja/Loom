@@ -11,6 +11,7 @@ from src.graph_db.schema import (
     METHOD,
     PAPER,
     RELATED_TO,
+    SUBTOPIC_OF,
     SUPPORTS,
     USES_METHOD,
 )
@@ -126,14 +127,47 @@ class KnowledgeGraphQueries:
         )
 
     def get_related_concepts(self, concept_name: str) -> list[dict]:
-        """Get concepts related to a given concept."""
+        """Get concepts related to a given concept.
+        
+        Returns all concepts connected via RELATED_TO, SUBTOPIC_OF, or EXTENDS relationships.
+        """
         return self.conn.execute_read(
-            f"""MATCH (c1:{CONCEPT} {{name: $name}})-[r:{RELATED_TO}]-(c2:{CONCEPT})
+            f"""MATCH (c1:{CONCEPT} {{name: $name}})-[r]-(c2:{CONCEPT})
+            WHERE type(r) IN ['RELATED_TO', 'SUBTOPIC_OF', 'EXTENDS']
             RETURN c2.name AS name, c2.description AS description,
-                   r.strength AS strength
-            ORDER BY r.strength DESC""",
+                   c2.domain AS domain, type(r) AS relation_type
+            ORDER BY c2.name""",
             {"name": concept_name},
         )
+
+    def get_concept_hierarchy(self, concept_name: str) -> dict:
+        """Get hierarchical relationships for a concept.
+        
+        Returns:
+            - 'prerequisites': concepts this one depends on (SUBTOPIC_OF incoming)
+            - 'related': related concepts (RELATED_TO both directions)
+            - 'extensions': concepts that extend this one (EXTENDS outgoing)
+        """
+        prerequisites = self.conn.execute_read(
+            f"""MATCH (c1:{CONCEPT})<-[:{SUBTOPIC_OF}]-(c2:{CONCEPT} {{name: $name}})
+            RETURN c1.name AS name, c1.description AS description, c1.domain AS domain""",
+            {"name": concept_name},
+        )
+        related = self.conn.execute_read(
+            f"""MATCH (c1:{CONCEPT} {{name: $name}})-[:{RELATED_TO}]-(c2:{CONCEPT})
+            RETURN c2.name AS name, c2.description AS description, c2.domain AS domain""",
+            {"name": concept_name},
+        )
+        extensions = self.conn.execute_read(
+            f"""MATCH (c1:{CONCEPT} {{name: $name}})-[:{EXTENDS}]->(c2:{CONCEPT})
+            RETURN c2.name AS name, c2.description AS description, c2.domain AS domain""",
+            {"name": concept_name},
+        )
+        return {
+            "prerequisites": prerequisites or [],
+            "related": related or [],
+            "extensions": extensions or [],
+        }
 
     # ----- Graph Overview -----
 

@@ -286,6 +286,21 @@ class IngestionService:
                                 "Cross-finding linking failed for %s: %s",
                                 identity.document_id, link_exc,
                             )
+                        # Cross-concept edge detection (requires a model; silently skipped otherwise).
+                        try:
+                            n_concept_links = self._kg_writer.link_concepts(
+                                profile, identity.document_id, model
+                            )
+                            if n_concept_links:
+                                logger.info(
+                                    "KG: wrote %d cross-concept edge(s) for %s",
+                                    n_concept_links, identity.document_id,
+                                )
+                        except Exception as concept_link_exc:
+                            logger.warning(
+                                "Cross-concept linking failed for %s: %s",
+                                identity.document_id, concept_link_exc,
+                            )
                 except Exception as kg_exc:
                     logger.warning(
                         "KG indexing failed for %s (RAG indexing succeeded): %s",
@@ -395,6 +410,13 @@ class IngestionService:
                 except Exception as link_exc:
                     logger.warning(
                         "Cross-finding linking failed for %s: %s", document_id, link_exc
+                    )
+                # Attempt cross-concept edge detection (needs the model).
+                try:
+                    self._kg_writer.link_concepts(profile, document_id, model)
+                except Exception as concept_link_exc:
+                    logger.warning(
+                        "Cross-concept linking failed for %s: %s", document_id, concept_link_exc
                     )
             return True
         except Exception as exc:

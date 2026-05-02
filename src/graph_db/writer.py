@@ -15,6 +15,7 @@ from src.graph_db.connection import Neo4jConnection
 from src.graph_db.schema import (
     CONCEPT,
     CONTRADICTS,
+    CROSS_CONCEPT_RELS,
     CROSS_FINDING_RELS,
     DISCUSSES,
     EXTENDS,
@@ -22,6 +23,8 @@ from src.graph_db.schema import (
     HAS_FINDING,
     METHOD,
     PAPER,
+    RELATED_TO,
+    SUBTOPIC_OF,
     SUPPORTS,
     USES_METHOD,
     initialize_schema,
@@ -68,6 +71,49 @@ EXISTING FINDINGS (from other papers already in the graph):
 {existing_findings_json}
 
 Identify all pairs where a new finding SUPPORTS, CONTRADICTS, or EXTENDS an existing finding."""
+    ),
+])
+
+# ---------------------------------------------------------------------------
+# Prompt template for cross-concept relationship detection
+# ---------------------------------------------------------------------------
+
+_CONCEPT_LINKS_PROMPT = ChatPromptTemplate.from_messages([
+    (
+        "system",
+        """You are a scientific knowledge graph assistant specialising in concept relationship detection.
+
+Your task is to compare two sets of research concepts and identify semantic relationships between them.
+
+RELATIONSHIP TYPES:
+- RELATED_TO: The concepts are related but neither is prerequisite to or subsumed by the other (e.g., "attention" RELATED_TO "optimization").
+- SUBTOPIC_OF: The new concept is a specific instance or subtype of an existing concept (e.g., "self-attention" SUBTOPIC_OF "attention").
+- EXTENDS: The new concept builds on or extends an existing concept with additional nuance or technique (e.g., "multi-head attention" EXTENDS "self-attention").
+
+GUIDANCE:
+- Only suggest relationships where the concepts are semantically related in the academic domain.
+- Avoid spurious links between unrelated concepts.
+- Use domain context (the "domain" field) to disambiguate.
+
+OUTPUT INSTRUCTIONS:
+- Return ONLY a valid JSON array.
+- Each element must be an object with exactly three keys:
+    "source" — the concept_key of the new concept
+    "target" — the concept_key of the existing concept
+    "relation" — one of RELATED_TO, SUBTOPIC_OF, or EXTENDS
+- If no relationships exist, return an empty array: []
+- No markdown fences, no prose, no commentary — raw JSON only."""
+    ),
+    (
+        "human",
+        """NEW CONCEPTS (just added to the graph):
+{new_concepts_json}
+
+EXISTING CONCEPTS (from other papers already in the graph, same domain):
+{existing_concepts_json}
+
+Identify all pairs where a new concept is RELATED_TO, SUBTOPIC_OF, or EXTENDS an existing concept. 
+Focus on scientifically meaningful relationships."""
     ),
 ])
 
@@ -200,6 +246,81 @@ class KnowledgeGraphWriter:
             return 0
 
         return self._write_finding_links(relations)
+
+    def link_concepts(
+        self,
+        profile: "PaperProfile",
+        document_id: str,
+        model: str,
+    ) -> int:
+        """Detect cross-concept RELATED_TO/SUBTOPIC_OF/EXTENDS relationships.
+
+        Compares the concepts in *profile* against all concepts already in the graph
+        from *other* papers within the same domain.  One LLM call produces a JSON
+        list of ``{source, target, relation}`` triples that are then written as
+        directed edges.
+
+        Args:
+            profile: The paper profile whose concepts were just written.
+            document_id: The paper's document_id (used to exclude its own concepts).
+            model: Ollama model name used for the comparison LLM call.
+
+        Returns:
+            Number of cross-concept edges created.  Returns 0 if there are no
+            existing concepts to compare against (in the same domain) or if the
+            LLM returns nothing useful.
+        """
+        new_concepts = [
+            {
+                "concept_key": make_concept_key(c.name, c.domain or profile.domain),
+                "name": c.name,
+                "description": c.description,
+                "domain": c.domain or profile.domain,
+                "depth": c.depth,
+            }
+            for c in profile.concepts
+        ]
+        if not new_concepts:
+            return 0
+
+        # Fetch existing concepts from *other* papers in the SAME domain.
+        # Only consider concepts from papers with the same domain to keep the
+        # comparison semantically meaningful.
+        rows = self._conn.execute_read(
+            f"""MATCH (p1:{PAPER})-[:{DISCUSSES}]->(c:{CONCEPT})
+            WHERE p1.domain = $domain AND p1.document_id <> $document_id
+            RETURN DISTINCT c.concept_key AS concept_key,
+                           c.name        AS name,
+                           c.description AS description,
+                           c.domain      AS domain,
+                           count(DISTINCT p1) AS paper_count
+            LIMIT 200""",
+            {"domain": profile.domain, "document_id": document_id},
+        )
+        if not rows:
+            return 0
+
+        existing_concepts = [
+            {
+                "concept_key": r["concept_key"],
+                "name": r["name"],
+                "description": r["description"],
+                "domain": r["domain"],
+                "paper_count": r["paper_count"],
+            }
+            for r in rows
+            if r.get("concept_key")  # skip legacy nodes without a key
+        ]
+        if not existing_concepts:
+            return 0
+
+        relations = self._call_llm_for_concept_links(
+            new_concepts, existing_concepts, model
+        )
+        if not relations:
+            return 0
+
+        return self._write_concept_links(relations)
 
     # ------------------------------------------------------------------
     # Private helpers
@@ -381,4 +502,70 @@ class KnowledgeGraphWriter:
             return len(queries)
         except Exception as exc:
             logger.warning("Writing finding links failed: %s", exc)
+            return 0
+
+    def _call_llm_for_concept_links(
+        self,
+        new_concepts: list[dict],
+        existing_concepts: list[dict],
+        model: str,
+    ) -> list[dict]:
+        """Ask an LLM to identify RELATED_TO/SUBTOPIC_OF/EXTENDS concept pairs.
+
+        Uses the module-level ``_CONCEPT_LINKS_PROMPT`` (a ``ChatPromptTemplate``)
+        so the system role and human content are clearly separated and composable.
+
+        Returns a (possibly empty) list of ``{source, target, relation}`` dicts
+        where ``source`` and ``target`` are ``concept_key`` strings.
+        """
+        import json
+        from src.llm import get_llm
+        from src.utils.json_parser import parse_llm_json
+
+        llm = get_llm(model=model, temperature=0.0, require_json=True)
+        chain = _CONCEPT_LINKS_PROMPT | llm
+
+        try:
+            response = chain.invoke({
+                "new_concepts_json": json.dumps(new_concepts, indent=2),
+                "existing_concepts_json": json.dumps(existing_concepts, indent=2),
+            })
+            content = response.content
+            parsed = parse_llm_json(content)
+            if not isinstance(parsed, list):
+                return []
+            valid = [
+                r for r in parsed
+                if isinstance(r, dict)
+                and r.get("relation") in CROSS_CONCEPT_RELS
+                and r.get("source")
+                and r.get("target")
+            ]
+            return valid
+        except Exception as exc:
+            logger.warning("LLM call for concept links failed: %s", exc)
+            return []
+
+    def _write_concept_links(self, relations: list[dict]) -> int:
+        """Write cross-concept edges returned by the LLM.
+
+        Uses MERGE so repeated ingestion does not create duplicate edges.
+        Returns the number of edge write-attempts (some may merge onto existing).
+        """
+        queries: list[tuple[str, dict]] = []
+        for rel in relations:
+            rel_type = rel["relation"]  # already validated in CROSS_CONCEPT_RELS
+            queries.append((
+                f"""MATCH (src:{CONCEPT} {{concept_key: $source}})
+                MATCH (tgt:{CONCEPT} {{concept_key: $target}})
+                MERGE (src)-[:{rel_type}]->(tgt)""",
+                {"source": rel["source"], "target": rel["target"]},
+            ))
+        if not queries:
+            return 0
+        try:
+            self._conn.execute_write_tx(queries)
+            return len(queries)
+        except Exception as exc:
+            logger.warning("Writing concept links failed: %s", exc)
             return 0
