@@ -74,6 +74,8 @@ if "use_rag_persistent" not in st.session_state:
     st.session_state.use_rag_persistent = False
 if "use_graph_persistent" not in st.session_state:
     st.session_state.use_graph_persistent = False
+if "use_rag_eval_persistent" not in st.session_state:
+    st.session_state.use_rag_eval_persistent = False
 
 
 # --- Sidebar ---
@@ -159,11 +161,13 @@ with st.sidebar:
 
     use_rag_eval = st.toggle(
         "📊 Show RAG Quality Scores",
-        value=False,
+        value=st.session_state.use_rag_eval_persistent,
         key="use_rag_eval_toggle",
         help="After each RAG-assisted reply, run an LLM-as-Judge evaluation "
         "(adds one extra LLM call per response).",
     )
+    # Store the current state for persistence across pages
+    st.session_state.use_rag_eval_persistent = use_rag_eval
 
     # ----- Document Management (when RAG is on) -----
     collection_name = None
