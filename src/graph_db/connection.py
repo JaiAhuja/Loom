@@ -128,8 +128,14 @@ class Neo4jConnection:
         async with self.async_driver.session(database=self.database) as session:
 
             async def _work(tx):
-                result = await tx.run(query, parameters or {})
-                return await result.data()
+                try:
+                    result = await tx.run(query, parameters or {})
+                    return await result.data()
+                except Exception as e:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.error(f"Async read query failed: {e}", exc_info=True)
+                    raise
 
             return await session.execute_read(_work)
 
@@ -138,8 +144,14 @@ class Neo4jConnection:
         async with self.async_driver.session(database=self.database) as session:
 
             async def _work(tx):
-                result = await tx.run(query, parameters or {})
-                return await result.data()
+                try:
+                    result = await tx.run(query, parameters or {})
+                    return await result.data()
+                except Exception as e:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.error(f"Async write query failed: {e}", exc_info=True)
+                    raise
 
             return await session.execute_write(_work)
 
@@ -148,9 +160,15 @@ class Neo4jConnection:
         async with self.async_driver.session(database=self.database) as session:
 
             async def _work(tx):
-                for q, params in queries:
-                    result = await tx.run(q, params or {})
-                    await result.consume()  # Exhaust cursor so the transaction can commit cleanly.
+                import logging
+                logger = logging.getLogger(__name__)
+                for i, (q, params) in enumerate(queries):
+                    try:
+                        result = await tx.run(q, params or {})
+                        await result.consume()  # Exhaust cursor so the transaction can commit cleanly.
+                    except Exception as e:
+                        logger.error(f"Write transaction failed at query {i}: {e}", exc_info=True)
+                        raise
 
             await session.execute_write(_work)
 
@@ -171,11 +189,20 @@ class Neo4jConnection:
             self._async_driver = None
             try:
                 loop = asyncio.get_running_loop()
-                # An event loop is already running — schedule the close as a fire-and-forget task.
-                loop.create_task(driver.close())
+                # Event loop is running — register atexit handler to clean up the driver
+                def _cleanup_async_driver():
+                    try:
+                        asyncio.run(driver.close())
+                    except Exception:
+                        # Ignore errors during cleanup
+                        pass
+                atexit.register(_cleanup_async_driver)
             except RuntimeError:
-                # No running event loop (e.g. atexit, tests) — close synchronously.
-                asyncio.run(driver.close())
+                # No running event loop — close synchronously
+                try:
+                    asyncio.run(driver.close())
+                except Exception:
+                    pass
 
 
 # ---------------------------------------------------------------------------

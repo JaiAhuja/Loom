@@ -69,8 +69,11 @@ def create_safe_graph_tool(conn: Neo4jConnection) -> Any:
         except ValueError as exc:
             return f"Graph query error: {exc}\nSupported intents:\n{_INTENT_HELP}"
         except Exception as exc:
-            logger.warning("Graph query service error: %s", exc)
-            return f"Graph query failed unexpectedly: {exc}"
+            logger.error(f"Graph query service error for intent '{intent}': {type(exc).__name__}: {exc}", exc_info=True)
+            # Provide more specific error messages
+            if "Connection" in type(exc).__name__ or "connection" in str(exc).lower():
+                return "Knowledge graph unavailable (connection error). Please try again."
+            return f"Graph query failed: {str(exc)}"
 
         # --- format result ---
         return _format_result(result["intent"], result["data"])
@@ -94,8 +97,11 @@ def create_safe_graph_tool(conn: Neo4jConnection) -> Any:
         except ValueError as exc:
             return f"Graph query error: {exc}\nSupported intents:\n{_INTENT_HELP}"
         except Exception as exc:
-            logger.warning("Graph query service error: %s", exc)
-            return f"Graph query failed unexpectedly: {exc}"
+            logger.error(f"Async graph query service error for intent '{intent}': {type(exc).__name__}: {exc}", exc_info=True)
+            # Provide more specific error messages
+            if "Connection" in type(exc).__name__ or "connection" in str(exc).lower():
+                return "Knowledge graph unavailable (connection error). Please try again."
+            return f"Graph query failed: {str(exc)}"
 
         # --- format result ---
         return _format_result(result["intent"], result["data"])

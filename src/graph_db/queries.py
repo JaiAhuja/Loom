@@ -1,3 +1,5 @@
+import asyncio
+
 from src.graph_db.connection import Neo4jConnection
 from src.graph_db.schema import (
     AUTHOR,
@@ -530,7 +532,9 @@ class KnowledgeGraphQueries:
             return {"concepts": [], "methods": [], "findings": []}
         params = {"key": document_id}
         where_clause = "WHERE p.document_id = $key OR p.title = $key"
-        concepts = await self.conn.aexecute_read(
+        
+        # Execute all three queries concurrently
+        concepts_task = self.conn.aexecute_read(
             f"""MATCH (p:{PAPER})-[r:{DISCUSSES}]->(c:{CONCEPT})
             {where_clause}
             RETURN c.name AS name, c.description AS description,
@@ -538,17 +542,21 @@ class KnowledgeGraphQueries:
             ORDER BY r.depth, c.name""",
             params,
         )
-        methods = await self.conn.aexecute_read(
+        methods_task = self.conn.aexecute_read(
             f"""MATCH (p:{PAPER})-[:{USES_METHOD}]->(m:{METHOD})
             {where_clause}
             RETURN m.name AS name, m.description AS description""",
             params,
         )
-        findings = await self.conn.aexecute_read(
+        findings_task = self.conn.aexecute_read(
             f"""MATCH (p:{PAPER})-[:{HAS_FINDING}]->(f:{FINDING})
             {where_clause}
             RETURN f.claim AS claim, f.evidence_type AS evidence_type""",
             params,
+        )
+        
+        concepts, methods, findings = await asyncio.gather(
+            concepts_task, methods_task, findings_task
         )
         return {"concepts": concepts, "methods": methods, "findings": findings}
 
