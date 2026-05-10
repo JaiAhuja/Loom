@@ -373,12 +373,12 @@ class IngestionService:
         model: str | None,
         document_id: str,
     ) -> bool:
-        """Write a paper's KG data when RAG was indexed but Neo4j was unavailable.
+        """Write or refresh KG data when RAG was already indexed.
 
         Prefers the saved PaperProfile sidecar (written during the original ingest)
         over re-running the LLM.  Falls back to LLM re-extraction from the cached
-        Markdown only when the sidecar is absent, ensuring the KG always reflects
-        the same profile that was used to build the RAG chunks.
+        Markdown when the sidecar is absent or predates newer detail fields and
+        a model is available.
 
         Returns True on success, False on any failure.
         """

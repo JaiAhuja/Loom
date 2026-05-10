@@ -167,9 +167,9 @@ class KnowledgeGraphWriter:
     def write_paper_profile(self, profile: "PaperProfile", document_id: str) -> None:
         """Upsert a full PaperProfile into Neo4j.
 
-        Creates or updates the Paper node, its Concept / Method neighbours,
-        and its Finding nodes.  Safe to call multiple times for the same
-        ``document_id`` (re-ingestion).
+        Creates or updates the Paper node, typed PaperDetail children,
+        Concept / Method neighbours, and Finding nodes.  Safe to call
+        multiple times for the same ``document_id`` (re-ingestion).
 
         Args:
             profile: LLM-extracted paper profile.

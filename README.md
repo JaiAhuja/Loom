@@ -16,8 +16,8 @@ A **local, fully open-source knowledge graph & AI tutor** for researchers, stude
 | **LangGraph Orchestration** | ReAct-style agent with dynamic tool routing via [LangGraph](https://langchain-ai.github.io/langgraph/) |
 | **RAG Pipeline** | Upload PDFs → [Docling](https://github.com/DS4SD/docling) extraction → [ChromaDB](https://www.trychroma.com/) storage → Smart retrieval |
 | **Beautiful Output** | Publication-ready Markdown formatted for [Substack](https://substack.com/) / blogs |
-| **Knowledge Graph** | [Neo4j](https://neo4j.com/) knowledge graph — auto-extracted entities & relationships across papers |
-| **Graph Explorer** | Interactive [Pyvis](https://pyvis.readthedocs.io/) visualization + paper comparison + safe intent-based queries |
+| **Knowledge Graph** | [Neo4j](https://neo4j.com/) knowledge graph — extracted paper profiles, details, concepts, methods, findings, and cross-paper relationships |
+| **Graph Explorer** | Interactive [Pyvis](https://pyvis.readthedocs.io/) visualization + paper/detail inspection + paper comparison + safe intent-based queries |
 | **LangSmith Tracing** | Optional [LangSmith](https://smith.langchain.com/) observability and debugging |
 | **Chat History** | Save conversations to disk and export full chats as Markdown |
 
@@ -33,7 +33,7 @@ A **local, fully open-source knowledge graph & AI tutor** for researchers, stude
 │  │ • Model cfg  │  │  User ──► Agent ──► Markdown Response    │ │
 │  │ • Toggles    │  │                                          │ │
 │  │ • PDF Upload │  │  Page 2: Knowledge Graph Explorer        │ │
-│  │ • Collections│  │  Papers ◄─► Concepts ◄─► Findings        │ │
+│  │ • Collections│  │  Papers ─► Details / Concepts / Findings│ │
 │  └──────────────┘  └──────────────────────────────────────────┘ │
 └────────────────────────────┬────────────────────────────────────┘
                              │
@@ -73,21 +73,22 @@ When PDFs are uploaded they pass through a deterministic identity pipeline:
 2. **Filename-derived `document_id`** — the sanitised filename stem (e.g. `Self-Supervised Learning`) is the stable key used across RAG and KG
 3. **Unique `ingest_id`** assigned per upload session
 4. **Deterministic `chunk_id`** generated per text chunk → idempotent vector writes (upsert)
-5. Re-uploading the same file overwrites existing chunks instead of duplicating them
+5. Re-uploading a document with the same filename-derived `document_id` skips existing RAG chunks instead of duplicating them; if Neo4j is available and the KG is missing or lacks newer detail nodes, Loom catches the KG up from the cached profile or Markdown
 
 ### Knowledge Graph Pipeline
 
 1. **PDF uploaded** via Streamlit sidebar
-2. **Identity assigned** — filename stem → `document_id` (e.g. `My-Paper` → `My Paper`); MD5 hash → content-addressed storage path; unique `ingest_id` per session
+2. **Identity assigned** — sanitized filename stem → `document_id` (e.g. `My-Paper.pdf` → `My-Paper`); MD5 hash → content-addressed storage path; unique `ingest_id` per session
 3. **Docling** converts PDF to Markdown (shared with RAG pipeline)
-4. **LLM extracts** structured entities: papers, concepts, methods, findings, authors
-5. **Profile sidecar saved** — the `PaperProfile` is persisted as `data/txt/<document_id>_profile.json` alongside the Markdown cache. This ensures that if the KG index needs to be rebuilt later (e.g. Neo4j was down), the **exact same profile** is reused rather than re-running the LLM with potentially different output.
-6. **Entity resolution** — LLM fuzzy-matches against existing graph entities to avoid duplicates
+4. **LLM extracts** a structured `PaperProfile`: title, authors, year, domain, a 15-20 sentence summary, contributions, what the paper stands for, what it builds on, what it does not support, limitations, concepts, methods, and findings
+5. **Profile sidecar saved** — the `PaperProfile` is persisted as `data/txt/<document_id>_profile.json` alongside the Markdown cache. If the KG needs to be rebuilt later, Loom prefers the saved profile; if the sidecar is missing or predates newer detail fields and a model is available, it re-extracts from the cached Markdown.
+6. **Deterministic entity resolution** — graph nodes are merged by stable keys: `Paper.document_id`, `Concept.concept_key`, `Method.name`, `Finding.finding_key`, and `PaperDetail.detail_key`
 7. **Paper node keyed by `document_id`** — distinct PDFs with the same title stay separate
 8. **Concepts scoped by domain** — `concept_key` = `normalized_domain:name` prevents cross-domain collisions
-9. **Finding nodes have stable keys** — each `Finding` node is stamped with a `finding_key` (MD5 of `paper_title + claim`) that enables idempotent `MERGE` and stable cross-finding edge creation
-10. **Cross-finding detection** — after each paper is written, one LLM call compares its findings against findings already in the graph from other papers and writes directed `SUPPORTS`, `CONTRADICTS`, or `EXTENDS` edges
-11. **Neo4j stores** nodes and relationships (DISCUSSES, HAS_FINDING, SUPPORTS, CONTRADICTS, EXTENDS, etc.)
+9. **Detail child nodes** — `PaperDetail` nodes store extracted contributions, positions, build-on statements, unsupported claims, and limitations; the Paper node keeps the central summary
+10. **Finding nodes have stable keys** — each `Finding` node is stamped with a `finding_key` (MD5 of `paper_title + claim`) and stores `paper_document_id` for visualization and cross-paper queries
+11. **Cross-paper linking** — after each paper is written, Loom compares new findings and concepts against existing graph content and writes directed `SUPPORTS`, `CONTRADICTS`, `EXTENDS`, `RELATED_TO`, or `SUBTOPIC_OF` edges where applicable
+12. **Neo4j stores** nodes and relationships (`Paper`, `PaperDetail`, `Concept`, `Method`, `Finding`; `HAS_DETAIL`, `DISCUSSES`, `USES_METHOD`, `HAS_FINDING`, `SUPPORTS`, `CONTRADICTS`, `EXTENDS`, etc.)
 
 ### Graph Query Safety
 
@@ -234,7 +235,7 @@ loom/
 │   │
 │   ├── llm/
 │   │   ├── __init__.py
-│   │   ├── paper_profile.py  # Single-call LLM paper profiling (PaperProfile + extraction)
+│   │   ├── paper_profile.py  # Single-call LLM paper profiling (summary, details, entities)
 │   │   └── provider.py       # Ollama LLM & embeddings factory
 │   │
 │   ├── graph/
@@ -248,7 +249,8 @@ loom/
 │   │   ├── connection.py     # Neo4j connection manager
 │   │   ├── schema.py         # Graph schema (node/rel types, constraints)
 │   │   ├── queries.py        # Predefined graph queries + visualization
-│   │   └── service.py        # Typed intent-based graph query service
+│   │   ├── service.py        # Typed intent-based graph query service
+│   │   └── writer.py         # PaperProfile → Neo4j writer + relationship linker
 │   │
 │   ├── rag/
 │   │   ├── __init__.py
@@ -342,17 +344,18 @@ The agent will respond with a comprehensive, structured Markdown answer.
 ### Using the Knowledge Graph
 
 1. Start Neo4j: `docker-compose up -d`
-2. Toggle **"🔗 Enable Knowledge Graph"** in the sidebar
-3. Upload PDFs — entities are **automatically extracted** into the graph alongside RAG indexing
-4. Ask cross-paper questions:
+2. Toggle **"📄 Enable RAG"** so the upload/indexing controls are visible
+3. Toggle **"🔗 Enable Knowledge Graph"** in the sidebar
+4. Upload PDFs and click **"🔄 Process & Index Documents"** — graph nodes are extracted into Neo4j alongside RAG indexing
+5. Ask cross-paper questions:
 
 > *"How are my papers on transformers related to the attention mechanism paper?"*
 > *"What concepts appear in both papers?"*
 > *"Are there any contradicting findings across my papers?"*
 
-5. Visit the **📊 Knowledge Graph** page (sidebar) for:
+6. Visit the **📊 Knowledge Graph** page (sidebar) for:
    - Interactive graph visualization
-   - Paper explorer & comparison
+   - Paper summaries, extracted detail nodes, and paper comparison
    - Concept deep-dives
    - Cross-paper relationship analysis
 
