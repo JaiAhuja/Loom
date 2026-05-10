@@ -48,14 +48,24 @@ class FindingItem(BaseModel):
     evidence_type: str = "empirical"  # "empirical" | "theoretical" | "survey"
 
 
+class DetailItem(BaseModel):
+    text: str
+    evidence: str = ""
+
+
 class PaperProfile(BaseModel):
-    """LLM-extracted profile covering title, domain, summary, concepts, methods, and findings."""
+    """LLM-extracted profile covering paper-level summary, claims, and graph details."""
 
     title: str = ""
     authors: list[str] = Field(default_factory=list)
     year: Optional[int] = None
     domain: str = "Other"
     summary: str = ""
+    contributions: list[DetailItem] = Field(default_factory=list)
+    stands_for: list[DetailItem] = Field(default_factory=list)
+    builds_on: list[DetailItem] = Field(default_factory=list)
+    does_not_support: list[DetailItem] = Field(default_factory=list)
+    limitations: list[DetailItem] = Field(default_factory=list)
     concepts: list[ConceptItem] = Field(default_factory=list)
     methods: list[MethodItem] = Field(default_factory=list)
     findings: list[FindingItem] = Field(default_factory=list)
@@ -121,8 +131,15 @@ You are a Senior Research Analyst. Your goal is to deconstruct academic papers i
 1. **CONCEPTS (5-15)**: Focus on technical terms, theories, or novel entities. Use snake_case or lowercase.
 2. **METHODS (1-5)**: Identify the 'how'. (e.g., "Randomized Controlled Trial", "Transformer Architecture", "Qualitative Interviews").
 3. **FINDINGS (2-8)**: Each finding must include a 'claim' and the 'evidence_type'. Prefer findings that include statistical results or specific outcomes.
-4. **DOMAIN**: Strictly use one from: {domains}.
-5. **DEPTH**: 'core' is for the primary subject; 'mentions' is for background context.
+4. **DETAILS**:
+   - contributions: what the paper adds.
+   - stands_for: the central thesis, position, or model the paper represents.
+   - builds_on: prior work, assumptions, methods, datasets, theories, or baselines it explicitly builds on.
+   - does_not_support: claims, methods, generalisations, or interpretations the paper explicitly rejects, weakens, cautions against, or fails to establish.
+   - limitations: boundaries, threats to validity, missing evidence, or open questions.
+   Each detail must be a concise sentence with optional evidence text.
+5. **DOMAIN**: Strictly use one from: {domains}.
+6. **DEPTH**: 'core' is for the primary subject; 'mentions' is for background context.
 
 ### OUTPUT INSTRUCTIONS
 - Return ONLY valid JSON.
@@ -140,7 +157,7 @@ Content:
 ---
 
 ### TASK
-Analyze the text above and populate the following JSON schema. Ensure the 'summary' is a comprehensive 10-15 sentence narrative of the paper's lifecycle.
+Analyze the text above and populate the following JSON schema. Ensure the 'summary' is a comprehensive 15-20 sentence narrative of the paper's lifecycle, including motivation, method, evidence, contributions, boundaries, and implications.
 
 {{
     "internal_analysis": "Briefly list the 3 most important keywords from the paper here before filling the rest",
@@ -149,6 +166,21 @@ Analyze the text above and populate the following JSON schema. Ensure the 'summa
     "year": null,
     "domain": "",
     "summary": "",
+    "contributions": [
+        {{"text": "", "evidence": ""}}
+    ],
+    "stands_for": [
+        {{"text": "", "evidence": ""}}
+    ],
+    "builds_on": [
+        {{"text": "", "evidence": ""}}
+    ],
+    "does_not_support": [
+        {{"text": "", "evidence": ""}}
+    ],
+    "limitations": [
+        {{"text": "", "evidence": ""}}
+    ],
     "concepts": [
         {{"name": "", "description": "", "domain": "", "depth": ""}}
     ],
@@ -243,6 +275,20 @@ def _build_profile(parsed: dict) -> Optional[PaperProfile]:
     for c in parsed.get("concepts", []) or []:
         if isinstance(c, dict):
             c["domain"] = canonicalize_domain(c.get("domain", ""))
+    for field_name in (
+        "contributions",
+        "stands_for",
+        "builds_on",
+        "does_not_support",
+        "limitations",
+    ):
+        normalised_details = []
+        for item in parsed.get(field_name, []) or []:
+            if isinstance(item, str):
+                normalised_details.append({"text": item, "evidence": ""})
+            elif isinstance(item, dict):
+                normalised_details.append(item)
+        parsed[field_name] = normalised_details
 
     try:
         return PaperProfile(**parsed)

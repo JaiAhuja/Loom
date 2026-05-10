@@ -63,6 +63,22 @@ def _load_profile_sidecar(document_id: str):
         return None
 
 
+def _profile_has_details(profile) -> bool:
+    """Return True if the profile contains any typed paper-detail entries."""
+    if profile is None:
+        return False
+    return any(
+        getattr(profile, field_name, None)
+        for field_name in (
+            "contributions",
+            "stands_for",
+            "builds_on",
+            "does_not_support",
+            "limitations",
+        )
+    )
+
+
 @dataclass
 class FileResult:
     """Outcome of ingesting a single file."""
@@ -210,10 +226,17 @@ class IngestionService:
                 fr.paper_title = paper_meta["title"] if paper_meta else identity.document_id
                 fr.content_chunks = paper_meta["chunk_count"] if paper_meta else 0
 
-                # Check whether KG also needs writing (e.g. Neo4j was down before).
-                if self._kg_writer is not None and not self._kg_writer.is_paper_in_kg(
-                    identity.document_id
-                ):
+                # Check whether KG also needs writing (e.g. Neo4j was down before,
+                # or the paper pre-dates typed PaperDetail nodes).
+                kg_needs_write = False
+                if self._kg_writer is not None:
+                    in_kg = self._kg_writer.is_paper_in_kg(identity.document_id)
+                    kg_needs_write = (
+                        not in_kg
+                        or (in_kg and not self._kg_writer.has_paper_details(identity.document_id))
+                    )
+
+                if self._kg_writer is not None and kg_needs_write:
                     skip_msg = (
                         f"[{idx+1}/{n_files}] RAG already indexed — writing KG for {file_name}"
                     )
@@ -365,12 +388,15 @@ class IngestionService:
         # ── Prefer saved sidecar (same profile used during original ingest) ──
         profile = _load_profile_sidecar(document_id)
 
-        if profile is None:
+        should_reextract = profile is None or (
+            not _profile_has_details(profile) and model is not None
+        )
+        if should_reextract:
             # Sidecar absent (pre-dates this fix, or write failed).  Fall back to
             # LLM re-extraction from the cached Markdown — requires model to be set.
             if model is None:
                 logger.warning(
-                    "No profile sidecar for %s and no model provided; skipping KG write.",
+                    "No complete profile sidecar for %s and no model provided; skipping KG write.",
                     document_id,
                 )
                 return False

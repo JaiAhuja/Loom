@@ -41,11 +41,12 @@ queries = KnowledgeGraphQueries(conn)
 
 # --- Graph Statistics ---
 stats = queries.get_graph_stats()
-col1, col2, col3, col4 = st.columns(4)
+col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("📄 Papers", stats.get("papers", 0))
 col2.metric("💡 Concepts", stats.get("concepts", 0))
 col3.metric("⚙️ Methods", stats.get("methods", 0))
 col4.metric("🔬 Findings", stats.get("findings", 0))
+col5.metric("🧩 Details", stats.get("details", 0))
 
 if stats.get("papers", 0) == 0:
     st.info(
@@ -114,7 +115,7 @@ tab_graph, tab_papers, tab_concepts, tab_relations = _tabs
 # --- Tab 1: Interactive Graph Visualization ---
 with tab_graph:
     st.subheader("Interactive Research Graph")
-    st.caption("Papers (large nodes) connected to concepts (small nodes). Green = core topic, grey = mentioned.")
+    st.caption("Papers (large nodes) connected to concepts, methods, findings, and typed paper-detail nodes.")
 
     # ---- Filters (domains / papers / relationship types) ----
     with st.expander("🔧 Filters", expanded=False):
@@ -142,7 +143,10 @@ with tab_graph:
         )
         selected_rel_types = f_col3.multiselect(
             "Relationship types",
-            options=["DISCUSSES", "RELATED_TO", "SUPPORTS", "CONTRADICTS", "EXTENDS"],
+            options=[
+                "DISCUSSES", "HAS_DETAIL", "USES_METHOD", "HAS_FINDING",
+                "RELATED_TO", "SUPPORTS", "CONTRADICTS", "EXTENDS",
+            ],
             default=[],
             help="Leave empty to include all.",
         )
@@ -178,6 +182,7 @@ with tab_graph:
             "concept": "#4ECDC4",
             "method": "#FFE66D",
             "finding": "#A8E6CF",
+            "detail": "#B388FF",
         }
 
         for node in graph_data["nodes"]:
@@ -207,7 +212,7 @@ with tab_graph:
         st.markdown(
             """
             **Legend:** 🔴 Paper · 🟢 Concept · 🟡 Method ·
-            Green edge = core topic · Grey edge = mentioned ·
+            🟣 Detail · Green edge = core topic · Grey edge = mentioned ·
             Blue dashed = related concepts · Red = contradicts · Orange = extends
             """
         )
@@ -237,15 +242,29 @@ with tab_graph:
                     details = queries.get_paper_details(document_id=doc_id)
                     
                     # Display header with metadata
-                    col1, col2, col3 = st.columns(3)
+                    col1, col2, col3, col4 = st.columns(4)
                     col1.metric("💡 Concepts", len(details.get("concepts", [])))
                     col2.metric("⚙️ Methods", len(details.get("methods", [])))
                     col3.metric("🔬 Findings", len(details.get("findings", [])))
+                    col4.metric("🧩 Details", len(details.get("details", [])))
                     
                     # Display concepts, methods, findings in expandable sections
                     det_col1, det_col2 = st.columns(2)
                     
                     with det_col1:
+                        with st.expander("🧩 Extracted Details", expanded=True):
+                            detail_rows = details.get("details", [])
+                            if detail_rows:
+                                for d in detail_rows:
+                                    label = (d.get("edge_label") or d.get("category") or "DETAIL").replace("_", " ")
+                                    st.markdown(f"**{label.title()}**")
+                                    st.write(d.get("text", ""))
+                                    if d.get("evidence"):
+                                        st.caption(f"Evidence: {d['evidence']}")
+                                    st.divider()
+                            else:
+                                st.caption("No paper-detail nodes found for this paper")
+
                         with st.expander("💡 Concepts", expanded=True):
                             concepts = details.get("concepts", [])
                             if concepts:
@@ -335,6 +354,19 @@ with tab_papers:
             det_col1, det_col2 = st.columns(2)
 
             with det_col1:
+                st.markdown("### 🧩 Extracted Details")
+                grouped_details = {}
+                for d in details.get("details", []):
+                    grouped_details.setdefault(d.get("category") or "detail", []).append(d)
+                for category, rows in grouped_details.items():
+                    st.markdown(f"**{category.replace('_', ' ').title()}**")
+                    for d in rows:
+                        st.markdown(f"- {d.get('text', '')}")
+                        if d.get("evidence"):
+                            st.caption(f"  Evidence: {d['evidence']}")
+                if not grouped_details:
+                    st.caption("No extracted detail nodes found.")
+
                 st.markdown("### 💡 Concepts")
                 for c in details["concepts"]:
                     depth_badge = "🟢 Core" if c["depth"] == "core" else "⚪ Mentions"

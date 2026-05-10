@@ -9,11 +9,13 @@ CONCEPT = "Concept"
 METHOD = "Method"
 FINDING = "Finding"
 AUTHOR = "Author"
+DETAIL = "PaperDetail"
 
 # Relationship types
 DISCUSSES = "DISCUSSES"
 USES_METHOD = "USES_METHOD"
 HAS_FINDING = "HAS_FINDING"
+HAS_DETAIL = "HAS_DETAIL"
 AUTHORED_BY = "AUTHORED_BY"
 CITES = "CITES"
 RELATED_TO = "RELATED_TO"
@@ -77,6 +79,7 @@ def initialize_schema(conn: Neo4jConnection) -> None:
         f"CREATE CONSTRAINT IF NOT EXISTS FOR (m:{METHOD}) REQUIRE m.name IS UNIQUE",
         f"CREATE CONSTRAINT IF NOT EXISTS FOR (a:{AUTHOR}) REQUIRE a.name IS UNIQUE",
         f"CREATE CONSTRAINT IF NOT EXISTS FOR (f:{FINDING}) REQUIRE f.finding_key IS UNIQUE",
+        f"CREATE CONSTRAINT IF NOT EXISTS FOR (d:{DETAIL}) REQUIRE d.detail_key IS UNIQUE",
     ]
     indexes = [
         f"CREATE INDEX IF NOT EXISTS FOR (p:{PAPER}) ON (p.title)",
@@ -84,6 +87,7 @@ def initialize_schema(conn: Neo4jConnection) -> None:
         f"CREATE INDEX IF NOT EXISTS FOR (c:{CONCEPT}) ON (c.name)",
         f"CREATE INDEX IF NOT EXISTS FOR (c:{CONCEPT}) ON (c.domain)",
         f"CREATE INDEX IF NOT EXISTS FOR (f:{FINDING}) ON (f.paper_title)",
+        f"CREATE INDEX IF NOT EXISTS FOR (d:{DETAIL}) ON (d.category)",
     ]
 
     for cypher in constraints + indexes:

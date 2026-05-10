@@ -6,9 +6,11 @@ from src.graph_db.schema import (
     AUTHORED_BY,
     CONCEPT,
     CONTRADICTS,
+    DETAIL,
     DISCUSSES,
     EXTENDS,
     FINDING,
+    HAS_DETAIL,
     HAS_FINDING,
     METHOD,
     PAPER,
@@ -82,7 +84,21 @@ class KnowledgeGraphQueries:
             RETURN f.claim AS claim, f.evidence_type AS evidence_type""",
             params,
         )
-        return {"concepts": concepts, "methods": methods, "findings": findings}
+        details = self.conn.execute_read(
+            f"""MATCH (p:{PAPER})-[r:{HAS_DETAIL}]->(d:{DETAIL})
+            {where_clause}
+            RETURN d.category AS category, d.text AS text,
+                   d.evidence AS evidence, r.label AS edge_label,
+                   d.position AS position
+            ORDER BY d.category, d.position""",
+            params,
+        )
+        return {
+            "concepts": concepts,
+            "methods": methods,
+            "findings": findings,
+            "details": details,
+        }
 
     # ----- Cross-Paper Queries -----
 
@@ -180,11 +196,12 @@ class KnowledgeGraphQueries:
             OPTIONAL MATCH (c:{CONCEPT}) WITH papers, count(c) AS concepts
             OPTIONAL MATCH (m:{METHOD}) WITH papers, concepts, count(m) AS methods
             OPTIONAL MATCH (f:{FINDING}) WITH papers, concepts, methods, count(f) AS findings
-            RETURN papers, concepts, methods, findings"""
+            OPTIONAL MATCH (d:{DETAIL}) WITH papers, concepts, methods, findings, count(d) AS details
+            RETURN papers, concepts, methods, findings, details"""
         )
         if result:
             return result[0]
-        return {"papers": 0, "concepts": 0, "methods": 0, "findings": 0}
+        return {"papers": 0, "concepts": 0, "methods": 0, "findings": 0, "details": 0}
 
     def get_graph_for_visualization(
         self,
@@ -207,9 +224,9 @@ class KnowledgeGraphQueries:
             Optional list of paper ``document_id`` values; restricts the
             visualisation to these papers.
         rel_types:
-            Subset of ``["DISCUSSES", "RELATED_TO", "SUPPORTS",
-            "CONTRADICTS", "EXTENDS"]`` to include. When *None*, all are
-            included.
+            Subset of ``["DISCUSSES", "HAS_DETAIL", "USES_METHOD",
+            "HAS_FINDING", "RELATED_TO", "SUPPORTS", "CONTRADICTS",
+            "EXTENDS"]`` to include. When *None*, all are included.
 
         Returns a dict with 'nodes' and 'edges' lists suitable for
         building a pyvis network.
@@ -230,17 +247,34 @@ class KnowledgeGraphQueries:
             if paper_id not in seen_nodes:
                 # Fetch full metadata for this paper
                 meta = self.get_paper_details(document_id=doc_id)
+                paper_rows = self.conn.execute_read(
+                    f"""MATCH (p:{PAPER})
+                    WHERE p.document_id = $key OR p.title = $key
+                    RETURN p.summary AS summary, p.year AS year,
+                           p.authors_str AS authors
+                    LIMIT 1""",
+                    {"key": doc_id},
+                )
+                paper_meta = paper_rows[0] if paper_rows else {}
+                tooltip = "\n\n".join(filter(None, [
+                    title,
+                    paper_meta.get("summary") or "",
+                ]))
                 node_data = {
                     "id": paper_id,
                     "label": (title or "")[:40],
-                    "title": title,
+                    "title": tooltip or title,
                     "group": "paper",
                     "size": 25,
                     "doc_id": doc_id,
                     "domain": domain or "unknown",
+                    "summary": paper_meta.get("summary") or "",
+                    "year": paper_meta.get("year"),
+                    "authors": paper_meta.get("authors") or "",
                     "concepts_count": len(meta.get("concepts", [])),
                     "methods_count": len(meta.get("methods", [])),
                     "findings_count": len(meta.get("findings", [])),
+                    "details_count": len(meta.get("details", [])),
                 }
                 nodes.append(node_data)
                 seen_nodes.add(paper_id)
@@ -257,11 +291,22 @@ class KnowledgeGraphQueries:
             params["document_ids"] = document_ids
         where_clause = (" WHERE " + " AND ".join(filters)) if filters else ""
 
+        paper_filters = []
+        if domains:
+            paper_filters.append("p.domain IN $domains")
+        if document_ids:
+            paper_filters.append("p.document_id IN $document_ids")
+        paper_where_clause = (
+            " WHERE " + " AND ".join(paper_filters)
+        ) if paper_filters else ""
+
         if _include(DISCUSSES):
             results = self.conn.execute_read(
                 f"""MATCH (p:{PAPER})-[r:{DISCUSSES}]->(c:{CONCEPT}){where_clause}
                 RETURN p.title AS paper, p.document_id AS paper_doc, p.domain AS paper_domain,
+                       p.summary AS paper_summary,
                        c.name AS concept, c.domain AS concept_domain,
+                       c.description AS concept_description,
                        r.depth AS depth
                 LIMIT $limit""",
                 params,
@@ -278,7 +323,10 @@ class KnowledgeGraphQueries:
                     nodes.append({
                         "id": concept_id,
                         "label": row["concept"],
-                        "title": f"{row['concept']} ({row.get('concept_domain', '')})",
+                        "title": "\n".join(filter(None, [
+                            f"{row['concept']} ({row.get('concept_domain', '')})",
+                            row.get("concept_description") or "",
+                        ])),
                         "group": "concept",
                         "size": 15,
                     })
@@ -291,10 +339,114 @@ class KnowledgeGraphQueries:
                     "color": "#4CAF50" if row["depth"] == "core" else "#9E9E9E",
                 })
 
-        # --- Concept <-[RELATED_TO]-> Concept (limited to concepts already shown) ---
-        if _include(RELATED_TO):
+        # --- Papers -> typed detail child nodes (summary support, builds on, does not support, etc.) ---
+        if _include(HAS_DETAIL):
+            detail_results = self.conn.execute_read(
+                f"""MATCH (p:{PAPER})-[r:{HAS_DETAIL}]->(d:{DETAIL}){paper_where_clause}
+                RETURN p.title AS paper, p.document_id AS paper_doc, p.domain AS paper_domain,
+                       d.detail_key AS detail_key, d.category AS category,
+                       d.text AS text, d.evidence AS evidence, r.label AS edge_label
+                LIMIT $limit""",
+                params,
+            )
+            for row in detail_results:
+                paper_id = f"paper:{row['paper_doc'] or row['paper']}"
+                detail_id = f"detail:{row['detail_key']}"
+                if paper_id not in seen_nodes:
+                    _add_paper_node(row["paper_doc"] or row["paper"], row["paper"], row.get("paper_domain"))
+                if detail_id not in seen_nodes:
+                    nodes.append({
+                        "id": detail_id,
+                        "label": row.get("category", "detail").replace("_", " ").title(),
+                        "title": "\n\n".join(filter(None, [
+                            row.get("text") or "",
+                            f"Evidence: {row.get('evidence')}" if row.get("evidence") else "",
+                        ])),
+                        "group": "detail",
+                        "size": 13,
+                    })
+                    seen_nodes.add(detail_id)
+                edges.append({
+                    "from": paper_id,
+                    "to": detail_id,
+                    "label": row.get("edge_label") or "HAS_DETAIL",
+                    "color": "#B388FF",
+                })
+
+        # --- Papers -> Methods ---
+        if _include(USES_METHOD):
+            method_results = self.conn.execute_read(
+                f"""MATCH (p:{PAPER})-[:{USES_METHOD}]->(m:{METHOD}){paper_where_clause}
+                RETURN p.title AS paper, p.document_id AS paper_doc, p.domain AS paper_domain,
+                       m.name AS method, m.description AS description
+                LIMIT $limit""",
+                params,
+            )
+            for row in method_results:
+                paper_id = f"paper:{row['paper_doc'] or row['paper']}"
+                method_id = f"method:{row['method']}"
+                if paper_id not in seen_nodes:
+                    _add_paper_node(row["paper_doc"] or row["paper"], row["paper"], row.get("paper_domain"))
+                if method_id not in seen_nodes:
+                    nodes.append({
+                        "id": method_id,
+                        "label": row["method"],
+                        "title": row.get("description") or row["method"],
+                        "group": "method",
+                        "size": 14,
+                    })
+                    seen_nodes.add(method_id)
+                edges.append({
+                    "from": paper_id,
+                    "to": method_id,
+                    "label": "USES_METHOD",
+                    "color": "#FFD54F",
+                })
+
+        # --- Papers -> Findings ---
+        if _include(HAS_FINDING):
+            finding_results = self.conn.execute_read(
+                f"""MATCH (p:{PAPER})-[:{HAS_FINDING}]->(f:{FINDING}){paper_where_clause}
+                RETURN p.title AS paper, p.document_id AS paper_doc, p.domain AS paper_domain,
+                       f.finding_key AS finding_key, f.claim AS claim,
+                       f.evidence_type AS evidence_type
+                LIMIT $limit""",
+                params,
+            )
+            for row in finding_results:
+                paper_id = f"paper:{row['paper_doc'] or row['paper']}"
+                finding_id = f"finding:{row['finding_key']}"
+                if paper_id not in seen_nodes:
+                    _add_paper_node(row["paper_doc"] or row["paper"], row["paper"], row.get("paper_domain"))
+                if finding_id not in seen_nodes:
+                    nodes.append({
+                        "id": finding_id,
+                        "label": "Finding",
+                        "title": "\n".join(filter(None, [
+                            row.get("claim") or "",
+                            f"Evidence type: {row.get('evidence_type')}" if row.get("evidence_type") else "",
+                        ])),
+                        "group": "finding",
+                        "size": 13,
+                    })
+                    seen_nodes.add(finding_id)
+                edges.append({
+                    "from": paper_id,
+                    "to": finding_id,
+                    "label": "HAS_FINDING",
+                    "color": "#80CBC4",
+                })
+
+        # --- Concept-to-concept relationships (limited to concepts already shown) ---
+        for concept_rel_type, concept_color in (
+            (RELATED_TO, "#2196F3"),
+            (SUBTOPIC_OF, "#7E57C2"),
+            (EXTENDS, "#FF9800"),
+        ):
+            if not _include(concept_rel_type):
+                continue
             concept_rels = self.conn.execute_read(
-                f"""MATCH (c1:{CONCEPT})-[r:{RELATED_TO}]->(c2:{CONCEPT})
+                f"""MATCH (c1:{CONCEPT})-[r:{concept_rel_type}]->(c2:{CONCEPT})
                 RETURN c1.name AS from_concept, c2.name AS to_concept,
                        r.strength AS strength
                 LIMIT $limit""",
@@ -307,9 +459,9 @@ class KnowledgeGraphQueries:
                     edges.append({
                         "from": from_id,
                         "to": to_id,
-                        "label": "RELATED_TO",
-                        "color": "#2196F3",
-                        "dashes": True,
+                        "label": concept_rel_type,
+                        "color": concept_color,
+                        "dashes": concept_rel_type == RELATED_TO,
                     })
 
         # --- Cross-paper finding relationships (ALSO add paper nodes) ---
@@ -353,8 +505,8 @@ class KnowledgeGraphQueries:
     def delete_paper(self, document_id: str) -> dict:
         """Detach-delete a paper and clean up orphaned entities.
 
-        Removes the :class:`Paper` node (and its owned :class:`Finding`
-        nodes, which are paper-specific by construction) along with any
+        Removes the :class:`Paper` node plus its owned :class:`Finding`
+        and :class:`PaperDetail` nodes along with any
         :class:`Concept`/:class:`Method`/:class:`Author` nodes that are
         no longer referenced by any other paper.
 
@@ -385,11 +537,18 @@ class KnowledgeGraphQueries:
             {"document_id": document_id},
         )
         finding_count = finding_count_rows[0]["n"] if finding_count_rows else 0
+        detail_count_rows = self.conn.execute_read(
+            f"""MATCH (p:{PAPER} {{document_id: $document_id}})-[:{HAS_DETAIL}]->(d:{DETAIL})
+            RETURN count(d) AS n""",
+            {"document_id": document_id},
+        )
+        detail_count = detail_count_rows[0]["n"] if detail_count_rows else 0
 
         self.conn.execute_write(
             f"""MATCH (p:{PAPER} {{document_id: $document_id}})
             OPTIONAL MATCH (p)-[:{HAS_FINDING}]->(f:{FINDING})
-            DETACH DELETE f, p""",
+            OPTIONAL MATCH (p)-[:{HAS_DETAIL}]->(d:{DETAIL})
+            DETACH DELETE f, d, p""",
             {"document_id": document_id},
         )
 
@@ -434,6 +593,7 @@ class KnowledgeGraphQueries:
         return {
             "papers": 1,
             "findings": finding_count,
+            "details": detail_count,
             "concepts": concepts_removed,
             "methods": methods_removed,
             "authors": authors_removed,
@@ -554,11 +714,25 @@ class KnowledgeGraphQueries:
             RETURN f.claim AS claim, f.evidence_type AS evidence_type""",
             params,
         )
-        
-        concepts, methods, findings = await asyncio.gather(
-            concepts_task, methods_task, findings_task
+        details_task = self.conn.aexecute_read(
+            f"""MATCH (p:{PAPER})-[r:{HAS_DETAIL}]->(d:{DETAIL})
+            {where_clause}
+            RETURN d.category AS category, d.text AS text,
+                   d.evidence AS evidence, r.label AS edge_label,
+                   d.position AS position
+            ORDER BY d.category, d.position""",
+            params,
         )
-        return {"concepts": concepts, "methods": methods, "findings": findings}
+        
+        concepts, methods, findings, details = await asyncio.gather(
+            concepts_task, methods_task, findings_task, details_task
+        )
+        return {
+            "concepts": concepts,
+            "methods": methods,
+            "findings": findings,
+            "details": details,
+        }
 
     async def aget_shared_concepts(self, paper_a: str, paper_b: str) -> list[dict]:
         return await self.conn.aexecute_read(
@@ -611,8 +785,9 @@ class KnowledgeGraphQueries:
             OPTIONAL MATCH (c:{CONCEPT}) WITH papers, count(c) AS concepts
             OPTIONAL MATCH (m:{METHOD}) WITH papers, concepts, count(m) AS methods
             OPTIONAL MATCH (f:{FINDING}) WITH papers, concepts, methods, count(f) AS findings
-            RETURN papers, concepts, methods, findings"""
+            OPTIONAL MATCH (d:{DETAIL}) WITH papers, concepts, methods, findings, count(d) AS details
+            RETURN papers, concepts, methods, findings, details"""
         )
         if result:
             return result[0]
-        return {"papers": 0, "concepts": 0, "methods": 0, "findings": 0}
+        return {"papers": 0, "concepts": 0, "methods": 0, "findings": 0, "details": 0}
