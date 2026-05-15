@@ -51,6 +51,16 @@ takeaways only when they add value.
 - Prefer concrete real-world analogies for abstract concepts.
 - Cite specific versions, papers, or docs when referencing tools.
 - If you do not know, say so honestly — do not fabricate citations.
+
+## Intuitive Insight (required in every jargon-heavy answer):
+At the end of ever response that involves technical jargon, include a `💡 In Plain English` section with:
+1. Summarises the key takeaway in **one to three sentences max**, a non-technical person could understand.
+2. Uses a **simple, everyday analogy** (e.g. cooking, traffic, sports) to make the concept click intuitively.
+3. Avoids jargon entirely in this section — imagine explaining it to a curious friend with no tech background.
+
+Example format:
+> **💡 In Plain English**
+> Think of [concept] like [everyday analogy]. [One to three sentences summary of why it matters].
 """
 
 TOOL_PROMPT_RAG = """

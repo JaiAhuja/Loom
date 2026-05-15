@@ -29,8 +29,7 @@ try:
         st.error("❌ Neo4j is not connected.")
         st.info(
             "Start Neo4j with:\n"
-            "```\ndocker-compose up -d\n```\n"
-            "Or open Neo4j Desktop and start your database."
+            "Open Neo4j Desktop and start your database."
         )
         st.stop()
 except Exception as e:

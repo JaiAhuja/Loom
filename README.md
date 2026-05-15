@@ -33,7 +33,7 @@ A **local, fully open-source knowledge graph & AI tutor** for researchers, stude
 │  │ • Model cfg  │  │  User ──► Agent ──► Markdown Response    │ │
 │  │ • Toggles    │  │                                          │ │
 │  │ • PDF Upload │  │  Page 2: Knowledge Graph Explorer        │ │
-│  │ • Collections│  │  Papers ─► Details / Concepts / Findings│ │
+│  │ • Collections│  │  Papers ─► Details / Concepts / Findings │ │
 │  └──────────────┘  └──────────────────────────────────────────┘ │
 └────────────────────────────┬────────────────────────────────────┘
                              │
@@ -107,7 +107,7 @@ The agent and UI never generate or execute raw Cypher queries. Instead:
 
 - **Python 3.10+**
 - **[Ollama](https://ollama.com/)** installed and running
-- **[Docker](https://www.docker.com/)** (for Neo4j knowledge graph — optional)
+- **[Neo4j Desktop](https://neo4j.com/download/)** (for Neo4j knowledge graph — optional)
 - **Git** (for cloning)
 - ~8GB RAM minimum (depends on model size)
 
@@ -173,15 +173,11 @@ See the Configuration section below for the full list of settings.
 
 ### 6. Start Neo4j (Optional — for Knowledge Graph)
 
-```bash
-docker-compose up -d
-```
-
-This starts a Neo4j Community instance on `bolt://127.0.0.1:7687` with the Neo4j Browser at `http://localhost:7474`. Default credentials: `neo4j` / `Loom-Weave-Threads`.
-
-> ⚠️ **Change the default password before running on anything other than a private dev machine.** The bundled `docker-compose.yml` ships with `Loom-Weave-Threads` hard-coded for convenience — that value is public in this repo and **must not** be used on shared, networked, or cloud hosts. Set `NEO4J_PASSWORD` in a local `.env` file (picked up by both `docker-compose.yml` and the app's `.env`) and re-run `docker-compose up -d`.
-
-> **Alternative:** Use [Neo4j Desktop](https://neo4j.com/download/) and create a local database. Update `.env` with your connection details.
+Install [Neo4j Desktop](https://neo4j.com/download/) and create a local DBMS:
+1. Open Neo4j Desktop -> click **"New"** -> **"Create Prject"**
+2. Inside the project, click **"Add"** -> **"Local DBMS"**
+3. Set a password (e.g.`Loom-Weave-Threads`) and choose Neo4j 5.x
+4. Click **"Start"** on the database instance
 
 ### 7. Run the Application
 
@@ -200,7 +196,6 @@ loom/
 ├── .gitignore
 ├── README.md
 ├── requirements.txt
-├── docker-compose.yml        # Neo4j Docker setup
 ├── pytest.ini
 ├── app.py                    # Streamlit application entry point
 ├── granite_tokenizer/        # Local Granite tokenizer files (HybridChunker)
@@ -302,9 +297,9 @@ All settings are managed via environment variables (`.env` file):
 | `CHROMA_PERSIST_DIR` | `./data/chroma_db` | ChromaDB storage path |
 | `OUTPUT_DIR` | `./outputs` | Markdown output directory |
 | `RAG_TOP_K` | `5` | Number of chunks to retrieve |
-| `NEO4J_URI` | `bolt://127.0.0.1:7687` | Neo4j connection URI |
+| `NEO4J_URI` | `neo4j://127.0.0.1:7687` | Neo4j connection URI (Neo4j Desktop) |
 | `NEO4J_USERNAME` | `neo4j` | Neo4j username |
-| `NEO4J_PASSWORD` | `Loom-Weave-Threads` | Neo4j password (set in docker-compose) |
+| `NEO4J_PASSWORD` | `Loom-Weave-Threads` | Neo4j password (Neo4j Desktop) |
 | `NEO4J_DATABASE` | *(unset)* | Named DB (Enterprise only); leave unset for Community |
 
 ### LangSmith Setup (Optional)
@@ -343,7 +338,7 @@ The agent will respond with a comprehensive, structured Markdown answer.
 
 ### Using the Knowledge Graph
 
-1. Start Neo4j: `docker-compose up -d`
+1. Start your Neo4j Desktop DBMS
 2. Toggle **"📄 Enable RAG"** so the upload/indexing controls are visible
 3. Toggle **"🔗 Enable Knowledge Graph"** in the sidebar
 4. Upload PDFs and click **"🔄 Process & Index Documents"** — graph nodes are extracted into Neo4j alongside RAG indexing

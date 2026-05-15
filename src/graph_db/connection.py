@@ -219,7 +219,7 @@ _shared_connection: "Neo4jConnection | None" = None
 def get_neo4j_connection() -> Neo4jConnection:
     """Return the process-wide shared :class:`Neo4jConnection` singleton.
 
-    The same instance is returned on every call; the underlying Bolt driver
+    The same instance is returned on every call; the underlying Neo4j driver
     is lazy-initialised on first use and re-used across all Streamlit pages
     and background workers in the same process.
     """
