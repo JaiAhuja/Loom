@@ -16,7 +16,7 @@ Trigger this skill on **any** task in the Loom repo, including:
 - Modifying LLM provider or paper profiling (`src/llm/`)
 - Streamlit UI changes (`app.py`, `pages/`, `src/ui/`)
 - Settings / `.env` / config changes (`config/settings.py`)
-- Tests (`tests/`), docker-compose, requirements
+- Tests (`tests/`), requirements
 
 If the task is *purely* a one-line bug fix or doc typo, you may skip the propagation step but still load the context.
 
@@ -74,8 +74,9 @@ Utils: src/utils/json_parser.py — robust LLM-JSON extractor (handles code-fenc
 4. **Single LLM call for paper profiling.** `extract_paper_profile()` in `llm/paper_profile.py` returns a `PaperProfile` (title, domain, summary, concepts, methods, findings) in one shot. Don't fan it out into per-field calls.
 5. **Settings come from `config/settings.py` (Pydantic).** Never read env vars directly in modules — go through the settings singleton.
 6. **Feature flags gate tool assembly** in `src/graph/builder.py`. RAG/KG toggles in the sidebar must remain wired through the builder so the agent only sees enabled tools.
-7. **Neo4j is optional.** Code paths must degrade gracefully when Neo4j is unreachable (UI shows status, agent simply lacks the KG tool).
+7. **Neo4j is optional (via Neo4j Desktop).** Code paths must degrade gracefully when Neo4j is unreachable (UI shows status, agent simply lacks the KG tool). Users run Neo4j Desktop locally.
 8. **Granite tokenizer is local.** `granite_tokenizer/tokenizer.json` is used by the HybridChunker — do not require network downloads at runtime.
+9. **"In Plain English" insight is mandatory.** Every agent must end with a `💡 In Plain English` section containing a jargon-free analogy and one-sentence summary. This is enforced in the system prompt (`src/graph/nodes.py`)
 
 ## Conventions
 
@@ -102,7 +103,7 @@ After the implementation, evaluate each of the three doc artefacts independently
 | Artefact | Update when… | Skip when… |
 |---|---|---|
 | **`.github/skills/loom-context/SKILL.md`** (this file) | A new module/folder is added under `src/`; an invariant changes; a new entry point or tool category appears; default model/stack swaps; a new pipeline stage is introduced. | Internal refactor inside an existing module; bug fixes; renaming local symbols; test-only changes. |
-| **`README.md`** | User-visible behaviour changes: new feature, new sidebar toggle, new page, new env var, changed default model, new prerequisite, new docker-compose service, new install step, changed Quick Start, new tool the user can invoke, new export format. | Pure internals with no user impact; refactors; non-public helper changes. |
+| **`README.md`** | User-visible behaviour changes: new feature, new sidebar toggle, new page, new env var, changed default model, new prerequisite, new install step, changed Quick Start, new tool the user can invoke, new export format. | Pure internals with no user impact; refactors; non-public helper changes. |
 | **`Architectural Diagram.mmd`** | A new node appears in the architecture (new module, service, external dep) or a connection between existing nodes is added/removed/redirected (e.g. agent gains/loses a tool, RAG gains a new backend, ingestion calls a new component). | Logic changes inside an already-drawn node that don't change its connections or responsibilities summary. |
 
 For each artefact you update:
@@ -124,8 +125,7 @@ streamlit run app.py
 # Run tests
 pytest
 
-# Start Neo4j
-docker-compose up -d
+# Start Neo4j (use Neo4j Dekstop app - start DBMS from the UI)
 ```
 
 ## Anti-patterns to flag

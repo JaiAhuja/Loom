@@ -100,7 +100,7 @@ with st.sidebar:
         st.warning("⚠️ Neo4j not connected")
         if neo4j_error:
             st.caption(f"🔍 {neo4j_error}")
-        st.caption("`docker-compose up -d` or use Neo4j Desktop")
+        st.caption("Use Neo4j Desktop")
 
     # ----- Model Settings -----
     st.divider()

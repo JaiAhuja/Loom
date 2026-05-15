@@ -1,7 +1,10 @@
 from langchain_core.tools import StructuredTool
+import logging
 
 from config.settings import settings
 from src.rag.store import VectorStoreManager
+
+logger = logging.getLogger(__name__)
 
 
 def create_rag_tool(
@@ -72,6 +75,10 @@ def create_rag_tool(
             return "\n\n---\n\n".join(formatted)
 
         except Exception as e:
+            logger.error(f"Document search failed for query '{query}': {type(e).__name__}: {e}", exc_info=True)
+            # Provide more specific error messages
+            if "Connection" in type(e).__name__ or "Timeout" in type(e).__name__:
+                return "Document retrieval unavailable (connection error). Please try again."
             return f"Document search failed: {str(e)}"
 
     async def _aquery_documents(query: str) -> str:
@@ -99,6 +106,10 @@ def create_rag_tool(
             return "\n\n---\n\n".join(formatted)
 
         except Exception as e:
+            logger.error(f"Async document search failed for query '{query}': {type(e).__name__}: {e}", exc_info=True)
+            # Provide more specific error messages
+            if "Connection" in type(e).__name__ or "Timeout" in type(e).__name__:
+                return "Document retrieval unavailable (connection error). Please try again."
             return f"Document search failed: {str(e)}"
 
     return StructuredTool.from_function(

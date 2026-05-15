@@ -7,6 +7,7 @@ whenever a new PDF is processed and a PaperProfile has been extracted.
 from __future__ import annotations
 
 import logging
+import hashlib
 from typing import TYPE_CHECKING
 
 from langchain_core.prompts import ChatPromptTemplate
@@ -17,9 +18,11 @@ from src.graph_db.schema import (
     CONTRADICTS,
     CROSS_CONCEPT_RELS,
     CROSS_FINDING_RELS,
+    DETAIL,
     DISCUSSES,
     EXTENDS,
     FINDING,
+    HAS_DETAIL,
     HAS_FINDING,
     METHOD,
     PAPER,
@@ -149,12 +152,24 @@ class KnowledgeGraphWriter:
         except Exception:
             return False
 
+    def has_paper_details(self, document_id: str) -> bool:
+        """Return True when a paper has the typed detail child nodes."""
+        try:
+            rows = self._conn.execute_read(
+                f"""MATCH (p:{PAPER} {{document_id: $id}})-[:{HAS_DETAIL}]->(d:{DETAIL})
+                RETURN count(d) AS n""",
+                {"id": document_id},
+            )
+            return bool(rows and rows[0]["n"] > 0)
+        except Exception:
+            return False
+
     def write_paper_profile(self, profile: "PaperProfile", document_id: str) -> None:
         """Upsert a full PaperProfile into Neo4j.
 
-        Creates or updates the Paper node, its Concept / Method neighbours,
-        and its Finding nodes.  Safe to call multiple times for the same
-        ``document_id`` (re-ingestion).
+        Creates or updates the Paper node, typed PaperDetail children,
+        Concept / Method neighbours, and Finding nodes.  Safe to call
+        multiple times for the same ``document_id`` (re-ingestion).
 
         Args:
             profile: LLM-extracted paper profile.
@@ -163,6 +178,7 @@ class KnowledgeGraphWriter:
         self._ensure_schema()
         try:
             self._write_paper(profile, document_id)
+            self._write_details(profile, document_id)
             self._write_concepts(profile, document_id)
             self._write_methods(profile, document_id)
             self._write_findings(profile, document_id)
@@ -350,6 +366,60 @@ class KnowledgeGraphWriter:
             },
         )
 
+    def _write_details(self, profile: "PaperProfile", document_id: str) -> None:
+        """Upsert paper-owned detail nodes for the central Paper node."""
+        detail_fields = [
+            ("contribution", "CONTRIBUTES", getattr(profile, "contributions", [])),
+            ("stands_for", "STANDS_FOR", getattr(profile, "stands_for", [])),
+            ("builds_on", "BUILDS_ON", getattr(profile, "builds_on", [])),
+            ("does_not_support", "DOES_NOT_SUPPORT", getattr(profile, "does_not_support", [])),
+            ("limitation", "HAS_LIMITATION", getattr(profile, "limitations", [])),
+        ]
+        items: list[dict] = []
+        for category, edge_label, details in detail_fields:
+            for index, detail in enumerate(details or []):
+                text = (getattr(detail, "text", "") or "").strip()
+                if not text:
+                    continue
+                raw_key = f"{document_id}:{category}:{index}:{text.lower()}"
+                items.append({
+                    "detail_key": hashlib.md5(
+                        raw_key.encode(), usedforsecurity=False
+                    ).hexdigest(),
+                    "category": category,
+                    "edge_label": edge_label,
+                    "text": text,
+                    "evidence": (getattr(detail, "evidence", "") or "").strip(),
+                    "paper_document_id": document_id,
+                    "paper_title": profile.title or document_id,
+                    "position": index,
+                })
+
+        queries: list[tuple[str, dict]] = [
+            (
+                f"""MATCH (p:{PAPER} {{document_id: $document_id}})-[:{HAS_DETAIL}]->(d:{DETAIL})
+                DETACH DELETE d""",
+                {"document_id": document_id},
+            )
+        ]
+        if items:
+            queries.append((
+                f"""UNWIND $items AS item
+                MATCH (p:{PAPER} {{document_id: $document_id}})
+                MERGE (d:{DETAIL} {{detail_key: item.detail_key}})
+                SET d.category = item.category,
+                    d.text = item.text,
+                    d.evidence = item.evidence,
+                    d.paper_document_id = item.paper_document_id,
+                    d.paper_title = item.paper_title,
+                    d.position = item.position
+                MERGE (p)-[r:{HAS_DETAIL}]->(d)
+                SET r.label = item.edge_label,
+                    r.category = item.category""",
+                {"document_id": document_id, "items": items},
+            ))
+        self._conn.execute_write_tx(queries)
+
     def _write_concepts(self, profile: "PaperProfile", document_id: str) -> None:
         """Upsert all concepts and DISCUSSES edges in a single round-trip via UNWIND."""
         if not profile.concepts:
@@ -424,6 +494,7 @@ class KnowledgeGraphWriter:
                     finding_key:    $finding_key,
                     claim:          $claim,
                     evidence_type:  $evidence_type,
+                    paper_document_id: $document_id,
                     paper_title:    $paper_title
                 }})
                 CREATE (p)-[:{HAS_FINDING}]->(f)""",

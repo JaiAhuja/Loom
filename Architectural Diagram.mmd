@@ -8,7 +8,7 @@ flowchart TB
     subgraph EXT["☁️ External Services"]
         direction LR
         OLLAMA["🦙 Ollama<br/><i>localhost:11434</i><br/>LLM inference &amp; embeddings"]
-        NEO4J["🔵 Neo4j<br/><i>bolt://127.0.0.1:7687</i><br/>Knowledge graph DB"]
+        NEO4J["🔵 Neo4j Desktop<br/><i>bolt://127.0.0.1:7687</i><br/>Knowledge graph DB"]
         CHROMADB["🟢 ChromaDB<br/><i>./data/chroma_db</i><br/>Vector store"]
         LANGSMITH["📊 LangSmith<br/><i>Optional tracing</i>"]
     end
@@ -19,7 +19,7 @@ flowchart TB
     subgraph UI["🖥️ Streamlit UI Layer"]
         direction LR
         APP["<b>app.py</b><br/>Chat page<br/>• Sidebar toggles<br/>• PDF upload<br/>• Agent invocation<br/>• Auto-save responses"]
-        KGPAGE["<b>pages/2_Knowledge_Graph.py</b><br/>KG Explorer page<br/>• Graph View (pyvis)<br/>• Paper Explorer<br/>• Concept Explorer<br/>• Cross-Paper Relations"]
+        KGPAGE["<b>pages/2_Knowledge_Graph.py</b><br/>KG Explorer page<br/>• Graph View (pyvis)<br/>• Paper/detail inspector<br/>• Concept Explorer<br/>• Cross-Paper Relations"]
     end
 
     %% ─────────────────────────────────────────
@@ -35,7 +35,7 @@ flowchart TB
     subgraph INGEST["📥 Ingestion Pipeline"]
         direction TB
         IDENTITY["<b>ingestion/identity.py</b><br/>DocumentIdentity<br/>• Filename-based doc_id<br/>• MD5 hash for storage path<br/>• UUID ingest_id per session"]
-        INGSVC["<b>ingestion/service.py</b><br/>IngestionService<br/>• Orchestrates full pipeline<br/>• Dedup via content hash<br/>• Profile sidecar save/load<br/>• Progress callbacks<br/>• Per-file result tracking"]
+        INGSVC["<b>ingestion/service.py</b><br/>IngestionService<br/>• Orchestrates full pipeline<br/>• RAG skip by document_id<br/>• KG catch-up for missing details<br/>• Profile sidecar save/load<br/>• Progress callbacks"]
     end
 
     %% ─────────────────────────────────────────
@@ -43,7 +43,7 @@ flowchart TB
     %% ─────────────────────────────────────────
     subgraph RAG["📄 RAG Pipeline"]
         direction TB
-        PROCESSOR["<b>rag/processor.py</b><br/>DocumentProcessor<br/>• PDF → Markdown (Docling)<br/>• Hybrid chunking<br/>• Domain classification<br/>• Paper summarisation<br/>• Deterministic chunk IDs"]
+        PROCESSOR["<b>rag/processor.py</b><br/>DocumentProcessor<br/>• PDF → Markdown (Docling)<br/>• Hybrid chunking<br/>• PaperProfile extraction<br/>• Summary chunk creation<br/>• Deterministic chunk IDs"]
         STORE["<b>rag/store.py</b><br/>VectorStoreManager<br/>• Upsert with dedup IDs<br/>• Filtered retrieval<br/>• Collection management<br/>• Paper listing"]
     end
 
@@ -52,7 +52,7 @@ flowchart TB
     %% ─────────────────────────────────────────
     subgraph LLM["🧠 LLM Provider"]
         PROVIDER["<b>llm/provider.py</b><br/>get_llm() → ChatOllama<br/>get_embeddings() → OllamaEmbeddings<br/>• Cached by model+temp"]
-        PAPERPROFILE["<b>llm/paper_profile.py</b><br/>PaperProfile + extract_paper_profile()<br/>• Single ChatPromptTemplate call<br/>• Extracts title, domain, summary,<br/>&nbsp;&nbsp;concepts, methods, findings"]
+        PAPERPROFILE["<b>llm/paper_profile.py</b><br/>PaperProfile + extract_paper_profile()<br/>• Single ChatPromptTemplate call<br/>• Extracts summary, details,<br/>&nbsp;&nbsp;concepts, methods, findings"]
     end
 
     %% ─────────────────────────────────────────
@@ -61,10 +61,10 @@ flowchart TB
     subgraph KG["🔗 Knowledge Graph Layer"]
         direction TB
         CONN["<b>graph_db/connection.py</b><br/>Neo4jConnection<br/>• Lazy driver init<br/>• execute_read()<br/>• execute_write()<br/>• execute_write_tx()"]
-        SCHEMA["<b>graph_db/schema.py</b><br/>Schema constants<br/>• Node labels: Paper, Concept,<br/>  Method, Finding, Author<br/>• Rel types: DISCUSSES,<br/>  SUPPORTS, CONTRADICTS, etc.<br/>• finding_key (MD5 stable id)<br/>• CROSS_FINDING_RELS allow-list<br/>• initialize_schema()"]
+        SCHEMA["<b>graph_db/schema.py</b><br/>Schema constants<br/>• Node labels: Paper, PaperDetail,<br/>  Concept, Method, Finding, Author<br/>• Rel types: HAS_DETAIL, DISCUSSES,<br/>  SUPPORTS, CONTRADICTS, etc.<br/>• stable node keys + allow-lists<br/>• initialize_schema()"]
         QUERIES["<b>graph_db/queries.py</b><br/>KnowledgeGraphQueries<br/>• get_all_papers()<br/>• get_paper_details()<br/>• get_shared_concepts()<br/>• get_graph_stats()<br/>• get_graph_for_visualization()<br/>• Contradiction/support/extend queries"]
         SERVICE["<b>graph_db/service.py</b><br/>GraphQueryService<br/>• 9 named intents<br/>• Parameter validation<br/>• No free-form Cypher"]
-        WRITER["<b>graph_db/writer.py</b><br/>KnowledgeGraphWriter<br/>• write_paper_profile()<br/>• link_findings() — cross-finding edges<br/>• link_concepts() — cross-concept edges<br/>• Atomic _write_findings (DETACH+CREATE)<br/>• UNWIND batch for concepts &amp; methods<br/>• Idempotent MERGE writes"]
+        WRITER["<b>graph_db/writer.py</b><br/>KnowledgeGraphWriter<br/>• write_paper_profile()<br/>• Writes PaperDetail child nodes<br/>• link_findings() — cross-finding edges<br/>• link_concepts() — cross-concept edges<br/>• Atomic detail/finding rewrites<br/>• UNWIND batch for concepts &amp; methods"]
     end
 
     %% ─────────────────────────────────────────
