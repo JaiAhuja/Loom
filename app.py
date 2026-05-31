@@ -38,6 +38,15 @@ configure_langsmith()
 graph_builder = GraphBuilder()
 
 
+def _to_lang_message(msg: dict):
+    if not isinstance(msg, dict):
+        return None
+    content = msg.get("content", "")
+    return HumanMessage(content=content) if msg.get("role") == "user" else (
+        AIMessage(content=content) if msg.get("role") == "assistant" else None
+    )
+
+
 @st.cache_resource(show_spinner=False, max_entries=10)
 def _get_compiled_graph(
     use_rag: bool,
@@ -343,7 +352,7 @@ with st.sidebar:
         if existing_collections and collection_name in existing_collections:
             # Create a container outside the sidebar for the confirmation message
             _del_collection_confirm_area = st.container()
-            
+
             if confirm_destructive(
                 "🗑️ Delete Collection",
                 f"Delete collection **{collection_name}** and all its document chunks? This cannot be undone. (The Knowledge Graph will remain unchanged.)",
@@ -384,7 +393,7 @@ with st.sidebar:
                 mime="text/markdown",
                 use_container_width=True,
             )
-    
+
     # Save full chat to disk (explicit action)
     with col3:
         if st.button(
@@ -431,6 +440,8 @@ with st.sidebar:
                     st.success(f"Saved to chat_history/{os.path.basename(saved_path)}")
             except ValueError as exc:
                 st.warning(str(exc))
+            except OSError as exc:
+                st.error(f"Could not save chat history: {exc}")
 
 
 # --- Main Chat Interface ---
@@ -446,8 +457,10 @@ if not st.session_state.messages:
 
 # ----- Display Chat History -----
 for i, msg in enumerate(st.session_state.messages):
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
+    if not isinstance(msg, dict):
+        continue
+    with st.chat_message(msg.get("role", "assistant")):
+        st.markdown(msg.get("content", ""))
 
 # ----- Chat Input -----
 if user_input := st.chat_input("Ask about any concept in DE, DS, or AI..."):
@@ -457,12 +470,7 @@ if user_input := st.chat_input("Ask about any concept in DE, DS, or AI..."):
     st.session_state.messages.append({"role": "user", "content": user_input})
 
     # Build message history for LangChain
-    lang_messages = []
-    for msg in st.session_state.messages:
-        if msg["role"] == "user":
-            lang_messages.append(HumanMessage(content=msg["content"]))
-        elif msg["role"] == "assistant":
-            lang_messages.append(AIMessage(content=msg["content"]))
+    lang_messages = [m for msg in st.session_state.messages if (m := _to_lang_message(msg))]
 
     # Build and invoke the graph
     with st.chat_message("assistant"):
@@ -480,9 +488,10 @@ if user_input := st.chat_input("Ask about any concept in DE, DS, or AI..."):
                     _vector_store=get_vector_store() if use_rag else None,
                 )
 
-                result = graph.invoke({"messages": lang_messages})
-                ai_msg = result["messages"][-1]
-                response = ai_msg.content or EMPTY_RESPONSE_MARKDOWN
+                result = graph.invoke({"messages": lang_messages}) or {}
+                result_messages = result.get("messages") or []
+                ai_msg = result_messages[-1] if result_messages else None
+                response = getattr(ai_msg, "content", None) or EMPTY_RESPONSE_MARKDOWN
 
             except Exception as e:
                 response = format_chat_error(e, model)

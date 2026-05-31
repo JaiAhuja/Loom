@@ -8,6 +8,7 @@ in the directory are still listed (read-only) for backward compatibility.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from dataclasses import asdict, dataclass, field
@@ -16,6 +17,8 @@ from typing import Any, Iterable, Optional
 
 _DEFAULT_DIR = "./data/chat_history"
 _FILENAME_SAFE = re.compile(r"[^a-zA-Z0-9_-]+")
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -49,18 +52,15 @@ class ChatRecord:
         for msg in self.messages:
             role = msg.get("role", "assistant")
             heading = "**You:**" if role == "user" else "**Loom:**"
-            lines.append(heading)
-            lines.append("")
-            lines.append(msg.get("content", ""))
-            lines.append("")
-            lines.append("---")
-            lines.append("")
+            lines.extend([heading, "", msg.get("content", ""), "", "---", ""])
         return "\n".join(lines)
 
 
 def _topic_from_messages(messages: Iterable[dict]) -> str:
     """Derive a short topic string from the first user message."""
     for msg in messages:
+        if not isinstance(msg, dict):
+            continue
         if msg.get("role") == "user":
             text = (msg.get("content") or "").strip().splitlines()
             if text:
@@ -74,6 +74,29 @@ def _slugify(text: str) -> str:
     return slug[:60] or "chat"
 
 
+def _normalise_messages(messages: Any) -> list[dict]:
+    """Return a safe message list from saved JSON or session state."""
+    if not isinstance(messages, list):
+        return []
+
+    return [_normalise_message(msg) for msg in messages if isinstance(msg, dict)]
+
+
+def _normalise_message(msg: dict) -> dict:
+    role = msg.get("role") if msg.get("role") in {"user", "assistant", "system", "tool"} else "assistant"
+    content = msg.get("content")
+    return {"role": role, "content": content if isinstance(content, str) else ""}
+
+
+def _record_payload(record: ChatRecord) -> dict:
+    return {
+        "topic": record.topic,
+        "saved_at": record.saved_at,
+        "metadata": asdict(record.metadata),
+        "messages": record.messages,
+    }
+
+
 class ChatStore:
     """Persists chats to ``data/chat_history`` as JSON files."""
 
@@ -82,7 +105,8 @@ class ChatStore:
         os.makedirs(self.directory, exist_ok=True)
 
     def _path_for(self, filename: str) -> str:
-        return os.path.join(self.directory, filename)
+        safe_name = os.path.basename(str(filename or "").replace("\\", "/"))
+        return os.path.join(self.directory, safe_name)
 
     def save(
         self,
@@ -100,26 +124,12 @@ class ChatStore:
 
         record = ChatRecord(
             topic=topic,
-            messages=[
-                {"role": m.get("role", "assistant"), "content": m.get("content", "")}
-                for m in messages
-            ],
+            messages=_normalise_messages(messages),
             metadata=metadata or ChatMetadata(),
             saved_at=now.strftime("%Y-%m-%d %H:%M:%S"),
         )
 
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(
-                {
-                    "topic": record.topic,
-                    "saved_at": record.saved_at,
-                    "metadata": asdict(record.metadata),
-                    "messages": record.messages,
-                },
-                f,
-                indent=2,
-                ensure_ascii=False,
-            )
+        self._write_record(path, record)
         return path
 
     def update(
@@ -133,7 +143,7 @@ class ChatStore:
             raise ValueError("Cannot save an empty conversation.")
 
         path = self._path_for(filename)
-        
+
         # Load existing record to preserve original topic and saved_at
         try:
             existing_record = self.load(filename)
@@ -141,48 +151,44 @@ class ChatStore:
             saved_at = existing_record.saved_at
         except Exception:
             # If load fails, treat as new save
+            logger.debug("Failed to load existing chat before update: %s", filename, exc_info=True)
             topic = _topic_from_messages(messages)
             saved_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         record = ChatRecord(
             topic=topic,
-            messages=[
-                {"role": m.get("role", "assistant"), "content": m.get("content", "")}
-                for m in messages
-            ],
+            messages=_normalise_messages(messages),
             metadata=metadata or ChatMetadata(),
             saved_at=saved_at,
         )
 
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(
-                {
-                    "topic": record.topic,
-                    "saved_at": record.saved_at,
-                    "metadata": asdict(record.metadata),
-                    "messages": record.messages,
-                },
-                f,
-                indent=2,
-                ensure_ascii=False,
-            )
+        self._write_record(path, record)
         return path
+
+    def _write_record(self, path: str, record: ChatRecord) -> None:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(_record_payload(record), f, indent=2, ensure_ascii=False)
 
     def load(self, filename: str) -> ChatRecord:
         """Load a JSON chat file into a :class:`ChatRecord`."""
         with open(self._path_for(filename), "r", encoding="utf-8") as f:
             data: dict[str, Any] = json.load(f)
 
+        if not isinstance(data, dict):
+            raise ValueError(f"Chat file is not a JSON object: {filename}")
+
         meta_dict = data.get("metadata") or {}
+        if not isinstance(meta_dict, dict):
+            meta_dict = {}
         # Drop unknown keys so older files keep loading when the schema grows.
         known = set(ChatMetadata.__dataclass_fields__)
         meta = ChatMetadata(**{k: v for k, v in meta_dict.items() if k in known})
 
         return ChatRecord(
-            topic=data.get("topic", "Untitled chat"),
-            messages=data.get("messages", []),
+            topic=data.get("topic") or "Untitled chat",
+            messages=_normalise_messages(data.get("messages")),
             metadata=meta,
-            saved_at=data.get("saved_at", ""),
+            saved_at=data.get("saved_at") or "",
         )
 
     def delete(self, filename: str) -> None:
@@ -208,8 +214,12 @@ class ChatStore:
                 try:
                     with open(path, "r", encoding="utf-8") as f:
                         data = json.load(f)
+                    if not isinstance(data, dict):
+                        continue
                     topic = data.get("topic") or os.path.splitext(name)[0]
                     metadata = data.get("metadata") or {}
+                    if not isinstance(metadata, dict):
+                        metadata = {}
                     entries.append({
                         "filename": name,
                         "path": path,
@@ -220,6 +230,7 @@ class ChatStore:
                         "modified": datetime.fromtimestamp(os.path.getmtime(path)),
                     })
                 except (OSError, json.JSONDecodeError):
+                    logger.debug("Skipping unreadable chat history file: %s", path, exc_info=True)
                     continue
             elif name.endswith(".md"):
                 entries.append({
@@ -249,6 +260,7 @@ class ChatStore:
                 try:
                     record = self.load(entry["filename"])
                 except Exception:
+                    logger.debug("Skipping unreadable chat during search: %s", entry["filename"], exc_info=True)
                     continue
                 if any(q in (m.get("content") or "").lower() for m in record.messages):
                     hits.append(entry)
@@ -257,8 +269,8 @@ class ChatStore:
                     with open(entry["path"], "r", encoding="utf-8") as f:
                         if q in f.read().lower():
                             hits.append(entry)
-                except Exception:
-                    pass
+                except OSError:
+                    logger.debug("Skipping unreadable markdown chat during search: %s", entry["path"], exc_info=True)
         return hits
 
     def render_markdown(self, filename: str) -> str:

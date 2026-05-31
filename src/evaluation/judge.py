@@ -5,15 +5,49 @@ Scores a RAG response across three dimensions (0–5 each):
 - Faithfulness: how grounded the answer is in the retrieved context.
 - Answer Relevance: how directly and helpfully the answer addresses the query.
 """
-import json
 import logging
 from dataclasses import dataclass
 
 from langchain_core.prompts import ChatPromptTemplate
 
 from src.llm import get_llm
+from src.utils.json_parser import parse_llm_json
 
 logger = logging.getLogger(__name__)
+
+
+def _score(value) -> int:
+    """Coerce a judge score into the allowed 0-5 range."""
+    try:
+        return max(0, min(5, int(value)))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _response_content(response) -> str:
+    content = getattr(response, "content", response)
+    if content is None:
+        return ""
+    return content if isinstance(content, str) else str(content)
+
+
+def _build_result(data: dict) -> EvaluationResult:
+    return EvaluationResult(
+        context_relevance=_score(data.get("context_relevance")),
+        faithfulness=_score(data.get("faithfulness")),
+        answer_relevance=_score(data.get("answer_relevance")),
+        reasoning=str(data.get("reasoning", "")),
+    )
+
+
+def _parse_result(response, async_label: bool = False) -> EvaluationResult | None:
+    data = parse_llm_json(_response_content(response)) or {}
+    if isinstance(data, dict) and "error" not in data:
+        return _build_result(data)
+    prefix = "Async RAG evaluation" if async_label else "RAG evaluation"
+    logger.warning("%s returned invalid JSON: %s", prefix, data)
+    return None
+
 
 _JUDGE_PROMPT = ChatPromptTemplate.from_messages([
     (
@@ -120,16 +154,9 @@ class RAGJudge:
             llm = get_llm(model=model, temperature=0.0, require_json=True)
             chain = _JUDGE_PROMPT | llm
             response = chain.invoke({"query": query, "context": context, "answer": answer})
-            raw = response.content.strip()
-            data = json.loads(raw)
-            return EvaluationResult(
-                context_relevance=int(data.get("context_relevance", 0)),
-                faithfulness=int(data.get("faithfulness", 0)),
-                answer_relevance=int(data.get("answer_relevance", 0)),
-                reasoning=str(data.get("reasoning", "")),
-            )
+            return _parse_result(response)
         except Exception as exc:
-            logger.warning("RAG evaluation failed: %s", exc)
+            logger.warning("RAG evaluation failed: %s", exc, exc_info=True)
             return None
 
     async def aevaluate(
@@ -144,14 +171,7 @@ class RAGJudge:
             llm = get_llm(model=model, temperature=0.0, require_json=True)
             chain = _JUDGE_PROMPT | llm
             response = await chain.ainvoke({"query": query, "context": context, "answer": answer})
-            raw = response.content.strip()
-            data = json.loads(raw)
-            return EvaluationResult(
-                context_relevance=int(data.get("context_relevance", 0)),
-                faithfulness=int(data.get("faithfulness", 0)),
-                answer_relevance=int(data.get("answer_relevance", 0)),
-                reasoning=str(data.get("reasoning", "")),
-            )
+            return _parse_result(response, async_label=True)
         except Exception as exc:
-            logger.warning("Async RAG evaluation failed: %s", exc)
+            logger.warning("Async RAG evaluation failed: %s", exc, exc_info=True)
             return None

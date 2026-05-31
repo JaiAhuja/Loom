@@ -52,59 +52,31 @@ def create_safe_graph_tool(conn: Neo4jConnection) -> Any:
     )
 
     def _query_knowledge_graph(intent: str, params: str = "{}") -> str:
-        # --- parse params ---
-        try:
-            parsed_params: dict = json.loads(params) if isinstance(params, str) else params
-            if not isinstance(parsed_params, dict):
-                parsed_params = {}
-        except (json.JSONDecodeError, TypeError):
-            return (
-                f"Invalid params — expected a JSON object string, got: {params!r}\n"
-                f"Supported intents:\n{_INTENT_HELP}"
-            )
+        parsed_params, error = _parse_params(params)
+        if error:
+            return error
 
-        # --- dispatch ---
         try:
             result = svc.execute(intent, parsed_params)
         except ValueError as exc:
             return f"Graph query error: {exc}\nSupported intents:\n{_INTENT_HELP}"
         except Exception as exc:
-            logger.error(f"Graph query service error for intent '{intent}': {type(exc).__name__}: {exc}", exc_info=True)
-            # Provide more specific error messages
-            if "Connection" in type(exc).__name__ or "connection" in str(exc).lower():
-                return "Knowledge graph unavailable (connection error). Please try again."
-            return f"Graph query failed: {str(exc)}"
-
-        # --- format result ---
-        return _format_result(result["intent"], result["data"])
+            return _graph_error(exc, intent, async_label=False)
+        return _format_service_result(result, intent, async_label=False)
 
     async def _aquery_knowledge_graph(intent: str, params: str = "{}") -> str:
         """Async version of the knowledge graph query tool."""
-        # --- parse params ---
-        try:
-            parsed_params: dict = json.loads(params) if isinstance(params, str) else params
-            if not isinstance(parsed_params, dict):
-                parsed_params = {}
-        except (json.JSONDecodeError, TypeError):
-            return (
-                f"Invalid params — expected a JSON object string, got: {params!r}\n"
-                f"Supported intents:\n{_INTENT_HELP}"
-            )
+        parsed_params, error = _parse_params(params)
+        if error:
+            return error
 
-        # --- dispatch ---
         try:
             result = await svc.aexecute(intent, parsed_params)
         except ValueError as exc:
             return f"Graph query error: {exc}\nSupported intents:\n{_INTENT_HELP}"
         except Exception as exc:
-            logger.error(f"Async graph query service error for intent '{intent}': {type(exc).__name__}: {exc}", exc_info=True)
-            # Provide more specific error messages
-            if "Connection" in type(exc).__name__ or "connection" in str(exc).lower():
-                return "Knowledge graph unavailable (connection error). Please try again."
-            return f"Graph query failed: {str(exc)}"
-
-        # --- format result ---
-        return _format_result(result["intent"], result["data"])
+            return _graph_error(exc, intent, async_label=True)
+        return _format_service_result(result, intent, async_label=True)
 
     return StructuredTool.from_function(
         func=_query_knowledge_graph,
@@ -112,6 +84,36 @@ def create_safe_graph_tool(conn: Neo4jConnection) -> Any:
         name="query_knowledge_graph",
         description=_TOOL_DESCRIPTION,
     )
+
+
+def _parse_params(params: str) -> tuple[dict, str | None]:
+    try:
+        parsed = json.loads(params) if isinstance(params, str) else params
+    except (json.JSONDecodeError, TypeError):
+        return {}, (
+            f"Invalid params — expected a JSON object string, got: {params!r}\n"
+            f"Supported intents:\n{_INTENT_HELP}"
+        )
+    return (parsed if isinstance(parsed, dict) else {}), None
+
+
+def _graph_error(exc: Exception, intent: str, async_label: bool) -> str:
+    prefix = "Async graph" if async_label else "Graph"
+    logger.error(
+        "%s query service error for intent '%s': %s: %s",
+        prefix, intent, type(exc).__name__, exc, exc_info=True,
+    )
+    if "Connection" in type(exc).__name__ or "connection" in str(exc).lower():
+        return "Knowledge graph unavailable (connection error). Please try again."
+    return f"Graph query failed: {exc}"
+
+
+def _format_service_result(result: Any, intent: str, async_label: bool) -> str:
+    if not isinstance(result, dict):
+        prefix = "Async graph" if async_label else "Graph"
+        logger.error("%s query returned non-dict result for intent %s: %r", prefix, intent, result)
+        return "Graph query failed: invalid result format."
+    return _format_result(result.get("intent") or intent, result.get("data"))
 
 
 # ---------------------------------------------------------------------------

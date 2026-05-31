@@ -48,10 +48,28 @@ def _chat_label(entry: dict) -> str:
     return f"{marker} {entry['topic'][:48]} · {ts}"
 
 
+def _entry_for_filename(filename: str) -> dict:
+    fallback = {
+        "filename": filename,
+        "type": "json",
+        "topic": filename,
+        "modified": entries[0]["modified"],
+    }
+    return next((e for e in entries if e["filename"] == filename), fallback)
+
+
+def _load_selected_record():
+    try:
+        return chat_store.load(selected_entry["filename"])
+    except (OSError, ValueError) as exc:
+        st.error(f"Could not load this chat: {exc}")
+        st.stop()
+
+
 selected_filename = st.sidebar.radio(
     "Select a chat to view",
     options=[e["filename"] for e in entries],
-    format_func=lambda fn: _chat_label(next(e for e in entries if e["filename"] == fn)),
+    format_func=lambda fn: _chat_label(_entry_for_filename(fn)),
     label_visibility="collapsed",
 )
 
@@ -76,9 +94,10 @@ with col_title:
 with col_resume:
     if selected_entry["resumable"]:
         if st.button("▶ Resume", use_container_width=True, type="primary"):
-            record = chat_store.load(selected_entry["filename"])
+            record = _load_selected_record()
             st.session_state.messages = [
-                {"role": m["role"], "content": m["content"]} for m in record.messages
+                {"role": m.get("role", "assistant"), "content": m.get("content", "")}
+                for m in record.messages
             ]
             st.session_state["_resumed_from"] = selected_entry["filename"]
             st.success("Conversation loaded - switching to chat...")
@@ -90,7 +109,11 @@ with col_resume:
         st.caption("—")
 
 # Download
-md_content = chat_store.render_markdown(selected_entry["filename"])
+try:
+    md_content = chat_store.render_markdown(selected_entry["filename"])
+except (OSError, ValueError) as exc:
+    st.error(f"Could not render this chat: {exc}")
+    st.stop()
 with col_dl:
     st.download_button(
         "⬇ Download",
@@ -126,8 +149,7 @@ st.divider()
 
 # Render the chat content
 if selected_entry["type"] == "json":
-    record = chat_store.load(selected_entry["filename"])
-    for msg in record.messages:
+    for msg in _load_selected_record().messages:
         with st.chat_message(msg.get("role", "assistant")):
             st.markdown(msg.get("content", ""))
 else:

@@ -30,9 +30,14 @@ logger = logging.getLogger(__name__)
 _TXT_DIR = os.path.join("data", "txt")
 
 
+def _safe_sidecar_stem(document_id: str) -> str:
+    """Return a path-safe sidecar stem for a document id."""
+    return os.path.basename(str(document_id or "document").replace("\\", "/")) or "document"
+
+
 def _profile_sidecar_path(document_id: str) -> str:
     """Return the path for the JSON sidecar of a PaperProfile."""
-    return os.path.join(_TXT_DIR, f"{document_id}_profile.json")
+    return os.path.join(_TXT_DIR, f"{_safe_sidecar_stem(document_id)}_profile.json")
 
 
 def _save_profile_sidecar(profile, document_id: str) -> None:

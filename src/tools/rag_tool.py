@@ -1,10 +1,40 @@
-from langchain_core.tools import StructuredTool
 import logging
+
+from langchain_core.documents import Document
+from langchain_core.tools import StructuredTool
 
 from config.settings import settings
 from src.rag.store import VectorStoreManager
 
 logger = logging.getLogger(__name__)
+
+
+def _format_doc_result(doc: Document, index: int) -> str:
+    """Format a retrieved document with null-safe metadata access."""
+    metadata = doc.metadata if isinstance(getattr(doc, "metadata", None), dict) else {}
+    paper = metadata.get("paper") or metadata.get("source") or "Unknown"
+    domain = metadata.get("domain") or ""
+    chunk_id = metadata.get("paper_chunk") or "?"
+    chunk_type = metadata.get("chunk_type") or "content"
+    content = getattr(doc, "page_content", "") or ""
+
+    type_badge = " [SUMMARY]" if chunk_type == "summary" else ""
+    domain_badge = f" | {domain}" if domain else ""
+    return (
+        f"**Document {index}** (Paper: {paper}{domain_badge}, "
+        f"Chunk: {chunk_id}{type_badge}):\n\n"
+        f"{content}"
+    )
+
+
+def _format_docs(docs: list[Document]) -> str:
+    return "\n\n---\n\n".join(_format_doc_result(doc, i) for i, doc in enumerate(docs, 1))
+
+
+def _search_error(exc: Exception) -> str:
+    if "Connection" in type(exc).__name__ or "Timeout" in type(exc).__name__:
+        return "Document retrieval unavailable (connection error). Please try again."
+    return f"Document search failed: {exc}"
 
 
 def create_rag_tool(
@@ -58,28 +88,11 @@ def create_rag_tool(
             if not docs:
                 return f"No relevant content found in the uploaded documents{scope_label}."
 
-            formatted = []
-            for i, doc in enumerate(docs, 1):
-                paper = doc.metadata.get("paper", doc.metadata.get("source", "Unknown"))
-                domain = doc.metadata.get("domain", "")
-                chunk_id = doc.metadata.get("paper_chunk", "?")
-                chunk_type = doc.metadata.get("chunk_type", "content")
-                type_badge = " [SUMMARY]" if chunk_type == "summary" else ""
-                domain_badge = f" | {domain}" if domain else ""
-                formatted.append(
-                    f"**Document {i}** (Paper: {paper}{domain_badge}, "
-                    f"Chunk: {chunk_id}{type_badge}):\n\n"
-                    f"{doc.page_content}"
-                )
-
-            return "\n\n---\n\n".join(formatted)
+            return _format_docs(docs)
 
         except Exception as e:
             logger.error(f"Document search failed for query '{query}': {type(e).__name__}: {e}", exc_info=True)
-            # Provide more specific error messages
-            if "Connection" in type(e).__name__ or "Timeout" in type(e).__name__:
-                return "Document retrieval unavailable (connection error). Please try again."
-            return f"Document search failed: {str(e)}"
+            return _search_error(e)
 
     async def _aquery_documents(query: str) -> str:
         """Async search through uploaded PDF documents for relevant information."""
@@ -89,28 +102,11 @@ def create_rag_tool(
             if not docs:
                 return f"No relevant content found in the uploaded documents{scope_label}."
 
-            formatted = []
-            for i, doc in enumerate(docs, 1):
-                paper = doc.metadata.get("paper", doc.metadata.get("source", "Unknown"))
-                domain = doc.metadata.get("domain", "")
-                chunk_id = doc.metadata.get("paper_chunk", "?")
-                chunk_type = doc.metadata.get("chunk_type", "content")
-                type_badge = " [SUMMARY]" if chunk_type == "summary" else ""
-                domain_badge = f" | {domain}" if domain else ""
-                formatted.append(
-                    f"**Document {i}** (Paper: {paper}{domain_badge}, "
-                    f"Chunk: {chunk_id}{type_badge}):\n\n"
-                    f"{doc.page_content}"
-                )
-
-            return "\n\n---\n\n".join(formatted)
+            return _format_docs(docs)
 
         except Exception as e:
             logger.error(f"Async document search failed for query '{query}': {type(e).__name__}: {e}", exc_info=True)
-            # Provide more specific error messages
-            if "Connection" in type(e).__name__ or "Timeout" in type(e).__name__:
-                return "Document retrieval unavailable (connection error). Please try again."
-            return f"Document search failed: {str(e)}"
+            return _search_error(e)
 
     return StructuredTool.from_function(
         func=_query_documents,
