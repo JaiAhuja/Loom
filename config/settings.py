@@ -27,10 +27,10 @@ class Settings(BaseSettings):
 
     # Neo4j
     # Use bolt:// for standalone instances; neo4j:// is for Causal Clusters.
-    NEO4J_URI: str = "neo4j://127.0.0.1:7687"
+    NEO4J_URI: str = "bolt://127.0.0.1:7687"
     NEO4J_USERNAME: str = "neo4j"
     NEO4J_PASSWORD: str = "Loom-Weave-Threads"
-    NEO4J_DATABASE: Optional[str] = None
+    NEO4J_DATABASE: Optional[str] = "loom"
 
     # RAG
     RAG_TOP_K: int = 5

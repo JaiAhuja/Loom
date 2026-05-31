@@ -297,7 +297,7 @@ All settings are managed via environment variables (`.env` file):
 | `CHROMA_PERSIST_DIR` | `./data/chroma_db` | ChromaDB storage path |
 | `OUTPUT_DIR` | `./outputs` | Markdown output directory |
 | `RAG_TOP_K` | `5` | Number of chunks to retrieve |
-| `NEO4J_URI` | `neo4j://127.0.0.1:7687` | Neo4j connection URI (Neo4j Desktop) |
+| `NEO4J_URI` | `bolt://127.0.0.1:7687` | Neo4j connection URI (Neo4j Desktop) |
 | `NEO4J_USERNAME` | `neo4j` | Neo4j username |
 | `NEO4J_PASSWORD` | `Loom-Weave-Threads` | Neo4j password (Neo4j Desktop) |
 | `NEO4J_DATABASE` | *(unset)* | Named DB (Enterprise only); leave unset for Community |

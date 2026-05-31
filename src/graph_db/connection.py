@@ -67,9 +67,15 @@ class Neo4jConnection:
         return self._async_driver
 
     def is_connected(self) -> bool:
-        """Check if Neo4j is reachable."""
+        """Check if Neo4j is reachable and the database instance is available.
+        
+        Unlike verify_connectivity(), this actually executes a query to ensure
+        the database instance is running (not just the server).
+        """
         try:
             self.driver.verify_connectivity()
+            # Also execute a simple query to ensure the database instance is available
+            self.execute_read("RETURN 1")
             return True
         except Exception:
             return False
