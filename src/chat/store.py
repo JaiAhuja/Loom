@@ -97,6 +97,18 @@ def _record_payload(record: ChatRecord) -> dict:
     }
 
 
+def _entry(name: str, path: str, topic: str, kind: str, metadata: dict | None = None) -> dict:
+    return {
+        "filename": name,
+        "path": path,
+        "topic": topic,
+        "type": kind,
+        "resumable": kind == "json",
+        "metadata": metadata or {},
+        "modified": datetime.fromtimestamp(os.path.getmtime(path)),
+    }
+
+
 class ChatStore:
     """Persists chats to ``data/chat_history`` as JSON files."""
 
@@ -220,28 +232,12 @@ class ChatStore:
                     metadata = data.get("metadata") or {}
                     if not isinstance(metadata, dict):
                         metadata = {}
-                    entries.append({
-                        "filename": name,
-                        "path": path,
-                        "topic": topic,
-                        "type": "json",
-                        "resumable": True,
-                        "metadata": metadata,
-                        "modified": datetime.fromtimestamp(os.path.getmtime(path)),
-                    })
+                    entries.append(_entry(name, path, topic, "json", metadata))
                 except (OSError, json.JSONDecodeError):
                     logger.debug("Skipping unreadable chat history file: %s", path, exc_info=True)
                     continue
             elif name.endswith(".md"):
-                entries.append({
-                    "filename": name,
-                    "path": path,
-                    "topic": os.path.splitext(name)[0].replace("-", " "),
-                    "type": "md",
-                    "resumable": False,
-                    "metadata": {},
-                    "modified": datetime.fromtimestamp(os.path.getmtime(path)),
-                })
+                entries.append(_entry(name, path, os.path.splitext(name)[0].replace("-", " "), "md"))
 
         entries.sort(key=lambda e: e["modified"], reverse=True)
         return entries
