@@ -1,11 +1,13 @@
 import os
 from typing import Optional
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables and .env file."""
+
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     # Ollama
     OLLAMA_BASE_URL: str = "http://localhost:11434"
@@ -38,11 +40,6 @@ class Settings(BaseSettings):
     RAG_FETCH_K: int = 10
     # MMR lambda: 1.0 = pure relevance, 0.0 = pure diversity
     RAG_MMR_LAMBDA: float = 0.4
-
-    class Config:
-        env_file = ".env"
-        extra = "ignore"
-
 
 # Module-level singleton
 settings = Settings()

@@ -20,6 +20,54 @@ from src.graph_db.schema import (
     USES_METHOD,
 )
 
+_PAPERS_QUERY = f"""MATCH (p:{PAPER})
+OPTIONAL MATCH (p)-[:{DISCUSSES}]->(c:{CONCEPT})
+RETURN p.document_id AS document_id, p.title AS title,
+       p.domain AS domain, p.year AS year, p.summary AS summary,
+       p.authors_str AS authors, count(c) AS concept_count
+ORDER BY p.title"""
+
+_PAPER_DETAILS_QUERIES = (
+    f"""MATCH (p:{PAPER})-[r:{DISCUSSES}]->(c:{CONCEPT})
+    WHERE p.document_id = $key OR p.title = $key
+    RETURN c.name AS name, c.description AS description,
+           c.domain AS domain, r.depth AS depth
+    ORDER BY r.depth, c.name""",
+    f"""MATCH (p:{PAPER})-[:{USES_METHOD}]->(m:{METHOD})
+    WHERE p.document_id = $key OR p.title = $key
+    RETURN m.name AS name, m.description AS description""",
+    f"""MATCH (p:{PAPER})-[:{HAS_FINDING}]->(f:{FINDING})
+    WHERE p.document_id = $key OR p.title = $key
+    RETURN f.claim AS claim, f.evidence_type AS evidence_type""",
+    f"""MATCH (p:{PAPER})-[r:{HAS_DETAIL}]->(d:{DETAIL})
+    WHERE p.document_id = $key OR p.title = $key
+    RETURN d.category AS category, d.text AS text,
+           d.evidence AS evidence, r.label AS edge_label,
+           d.position AS position
+    ORDER BY d.category, d.position""",
+)
+_DETAIL_KEYS = ("concepts", "methods", "findings", "details")
+
+_CONCEPTS_QUERY = f"""MATCH (c:{CONCEPT})
+OPTIONAL MATCH (p:{PAPER})-[:{DISCUSSES}]->(c)
+RETURN c.name AS name, c.description AS description,
+       c.domain AS domain, count(p) AS paper_count
+ORDER BY paper_count DESC"""
+
+_RELATED_CONCEPTS_QUERY = f"""MATCH (c1:{CONCEPT} {{name: $name}})-[r]-(c2:{CONCEPT})
+WHERE type(r) IN ['{RELATED_TO}', '{SUBTOPIC_OF}', '{EXTENDS}']
+RETURN c2.name AS name, c2.description AS description,
+       c2.domain AS domain, type(r) AS relation_type
+ORDER BY c2.name"""
+
+_STATS_QUERY = f"""OPTIONAL MATCH (p:{PAPER}) WITH count(p) AS papers
+OPTIONAL MATCH (c:{CONCEPT}) WITH papers, count(c) AS concepts
+OPTIONAL MATCH (m:{METHOD}) WITH papers, concepts, count(m) AS methods
+OPTIONAL MATCH (f:{FINDING}) WITH papers, concepts, methods, count(f) AS findings
+OPTIONAL MATCH (d:{DETAIL}) WITH papers, concepts, methods, findings, count(d) AS details
+RETURN papers, concepts, methods, findings, details"""
+_EMPTY_STATS = dict.fromkeys(("papers", "concepts", "methods", "findings", "details"), 0)
+
 
 class KnowledgeGraphQueries:
     """Pre-built Cypher queries for common knowledge graph operations.
@@ -41,15 +89,7 @@ class KnowledgeGraphQueries:
 
     def get_all_papers(self) -> list[dict]:
         """Get all papers with their metadata and concept count."""
-        return self.conn.execute_read(
-            f"""MATCH (p:{PAPER})
-            OPTIONAL MATCH (p)-[:{DISCUSSES}]->(c:{CONCEPT})
-            RETURN p.document_id AS document_id, p.title AS title,
-                   p.domain AS domain, p.year AS year,
-                   p.summary AS summary, p.authors_str AS authors,
-                   count(c) AS concept_count
-            ORDER BY p.title"""
-        )
+        return self.conn.execute_read(_PAPERS_QUERY)
 
     def get_paper_details(self, document_id: str) -> dict:
         """Get full details for a paper including all linked entities.
@@ -59,45 +99,11 @@ class KnowledgeGraphQueries:
         the UI (which uses document_ids) call the same method correctly.
         """
         if not document_id:
-            return {"concepts": [], "methods": [], "findings": []}
-
+            return {key: [] for key in _DETAIL_KEYS}
         params = {"key": document_id}
-        # Match by document_id first; fall back to title for agent callers.
-        where_clause = "WHERE p.document_id = $key OR p.title = $key"
-        concepts = self.conn.execute_read(
-            f"""MATCH (p:{PAPER})-[r:{DISCUSSES}]->(c:{CONCEPT})
-            {where_clause}
-            RETURN c.name AS name, c.description AS description,
-                   c.domain AS domain, r.depth AS depth
-            ORDER BY r.depth, c.name""",
-            params,
-        )
-        methods = self.conn.execute_read(
-            f"""MATCH (p:{PAPER})-[:{USES_METHOD}]->(m:{METHOD})
-            {where_clause}
-            RETURN m.name AS name, m.description AS description""",
-            params,
-        )
-        findings = self.conn.execute_read(
-            f"""MATCH (p:{PAPER})-[:{HAS_FINDING}]->(f:{FINDING})
-            {where_clause}
-            RETURN f.claim AS claim, f.evidence_type AS evidence_type""",
-            params,
-        )
-        details = self.conn.execute_read(
-            f"""MATCH (p:{PAPER})-[r:{HAS_DETAIL}]->(d:{DETAIL})
-            {where_clause}
-            RETURN d.category AS category, d.text AS text,
-                   d.evidence AS evidence, r.label AS edge_label,
-                   d.position AS position
-            ORDER BY d.category, d.position""",
-            params,
-        )
         return {
-            "concepts": concepts,
-            "methods": methods,
-            "findings": findings,
-            "details": details,
+            key: self.conn.execute_read(query, params)
+            for key, query in zip(_DETAIL_KEYS, _PAPER_DETAILS_QUERIES)
         }
 
     # ----- Cross-Paper Queries -----
@@ -128,13 +134,7 @@ class KnowledgeGraphQueries:
 
     def get_all_concepts(self) -> list[dict]:
         """Get all concepts with the count of papers that discuss them."""
-        return self.conn.execute_read(
-            f"""MATCH (c:{CONCEPT})
-            OPTIONAL MATCH (p:{PAPER})-[:{DISCUSSES}]->(c)
-            RETURN c.name AS name, c.description AS description,
-                   c.domain AS domain, count(p) AS paper_count
-            ORDER BY paper_count DESC"""
-        )
+        return self.conn.execute_read(_CONCEPTS_QUERY)
 
     def get_concept_papers(self, concept_name: str) -> list[dict]:
         """Get all papers that discuss a specific concept."""
@@ -149,14 +149,7 @@ class KnowledgeGraphQueries:
         
         Returns all concepts connected via RELATED_TO, SUBTOPIC_OF, or EXTENDS relationships.
         """
-        return self.conn.execute_read(
-            f"""MATCH (c1:{CONCEPT} {{name: $name}})-[r]-(c2:{CONCEPT})
-            WHERE type(r) IN ['RELATED_TO', 'SUBTOPIC_OF', 'EXTENDS']
-            RETURN c2.name AS name, c2.description AS description,
-                   c2.domain AS domain, type(r) AS relation_type
-            ORDER BY c2.name""",
-            {"name": concept_name},
-        )
+        return self.conn.execute_read(_RELATED_CONCEPTS_QUERY, {"name": concept_name})
 
     def get_concept_hierarchy(self, concept_name: str) -> dict:
         """Get hierarchical relationships for a concept.
@@ -191,17 +184,8 @@ class KnowledgeGraphQueries:
 
     def get_graph_stats(self) -> dict:
         """Get high-level statistics about the knowledge graph."""
-        result = self.conn.execute_read(
-            f"""OPTIONAL MATCH (p:{PAPER}) WITH count(p) AS papers
-            OPTIONAL MATCH (c:{CONCEPT}) WITH papers, count(c) AS concepts
-            OPTIONAL MATCH (m:{METHOD}) WITH papers, concepts, count(m) AS methods
-            OPTIONAL MATCH (f:{FINDING}) WITH papers, concepts, methods, count(f) AS findings
-            OPTIONAL MATCH (d:{DETAIL}) WITH papers, concepts, methods, findings, count(d) AS details
-            RETURN papers, concepts, methods, findings, details"""
-        )
-        if result:
-            return result[0]
-        return {"papers": 0, "concepts": 0, "methods": 0, "findings": 0, "details": 0}
+        result = self.conn.execute_read(_STATS_QUERY)
+        return result[0] if result else _EMPTY_STATS.copy()
 
     def get_graph_for_visualization(
         self,
@@ -676,63 +660,17 @@ class KnowledgeGraphQueries:
     # ------------------------------------------------------------------
 
     async def aget_all_papers(self) -> list[dict]:
-        return await self.conn.aexecute_read(
-            f"""MATCH (p:{PAPER})
-            OPTIONAL MATCH (p)-[:{DISCUSSES}]->(c:{CONCEPT})
-            RETURN p.document_id AS document_id, p.title AS title,
-                   p.domain AS domain, p.year AS year,
-                   p.summary AS summary, p.authors_str AS authors,
-                   count(c) AS concept_count
-            ORDER BY p.title"""
-        )
+        return await self.conn.aexecute_read(_PAPERS_QUERY)
 
     async def aget_paper_details(self, document_id: str) -> dict:
         """Async version of get_paper_details — matches on document_id or title."""
         if not document_id:
-            return {"concepts": [], "methods": [], "findings": []}
+            return {key: [] for key in _DETAIL_KEYS}
         params = {"key": document_id}
-        where_clause = "WHERE p.document_id = $key OR p.title = $key"
-        
-        # Execute all three queries concurrently
-        concepts_task = self.conn.aexecute_read(
-            f"""MATCH (p:{PAPER})-[r:{DISCUSSES}]->(c:{CONCEPT})
-            {where_clause}
-            RETURN c.name AS name, c.description AS description,
-                   c.domain AS domain, r.depth AS depth
-            ORDER BY r.depth, c.name""",
-            params,
-        )
-        methods_task = self.conn.aexecute_read(
-            f"""MATCH (p:{PAPER})-[:{USES_METHOD}]->(m:{METHOD})
-            {where_clause}
-            RETURN m.name AS name, m.description AS description""",
-            params,
-        )
-        findings_task = self.conn.aexecute_read(
-            f"""MATCH (p:{PAPER})-[:{HAS_FINDING}]->(f:{FINDING})
-            {where_clause}
-            RETURN f.claim AS claim, f.evidence_type AS evidence_type""",
-            params,
-        )
-        details_task = self.conn.aexecute_read(
-            f"""MATCH (p:{PAPER})-[r:{HAS_DETAIL}]->(d:{DETAIL})
-            {where_clause}
-            RETURN d.category AS category, d.text AS text,
-                   d.evidence AS evidence, r.label AS edge_label,
-                   d.position AS position
-            ORDER BY d.category, d.position""",
-            params,
-        )
-        
-        concepts, methods, findings, details = await asyncio.gather(
-            concepts_task, methods_task, findings_task, details_task
-        )
-        return {
-            "concepts": concepts,
-            "methods": methods,
-            "findings": findings,
-            "details": details,
-        }
+        results = await asyncio.gather(*(
+            self.conn.aexecute_read(query, params) for query in _PAPER_DETAILS_QUERIES
+        ))
+        return dict(zip(_DETAIL_KEYS, results))
 
     async def aget_shared_concepts(self, paper_a: str, paper_b: str) -> list[dict]:
         return await self.conn.aexecute_read(
@@ -755,13 +693,7 @@ class KnowledgeGraphQueries:
         )
 
     async def aget_all_concepts(self) -> list[dict]:
-        return await self.conn.aexecute_read(
-            f"""MATCH (c:{CONCEPT})
-            OPTIONAL MATCH (p:{PAPER})-[:{DISCUSSES}]->(c)
-            RETURN c.name AS name, c.description AS description,
-                   c.domain AS domain, count(p) AS paper_count
-            ORDER BY paper_count DESC"""
-        )
+        return await self.conn.aexecute_read(_CONCEPTS_QUERY)
 
     async def aget_concept_papers(self, concept_name: str) -> list[dict]:
         return await self.conn.aexecute_read(
@@ -772,22 +704,9 @@ class KnowledgeGraphQueries:
 
     async def aget_related_concepts(self, concept_name: str) -> list[dict]:
         return await self.conn.aexecute_read(
-            f"""MATCH (c1:{CONCEPT} {{name: $name}})-[r:{RELATED_TO}]-(c2:{CONCEPT})
-            RETURN c2.name AS name, c2.description AS description,
-                   r.strength AS strength
-            ORDER BY r.strength DESC""",
-            {"name": concept_name},
+            _RELATED_CONCEPTS_QUERY, {"name": concept_name}
         )
 
     async def aget_graph_stats(self) -> dict:
-        result = await self.conn.aexecute_read(
-            f"""OPTIONAL MATCH (p:{PAPER}) WITH count(p) AS papers
-            OPTIONAL MATCH (c:{CONCEPT}) WITH papers, count(c) AS concepts
-            OPTIONAL MATCH (m:{METHOD}) WITH papers, concepts, count(m) AS methods
-            OPTIONAL MATCH (f:{FINDING}) WITH papers, concepts, methods, count(f) AS findings
-            OPTIONAL MATCH (d:{DETAIL}) WITH papers, concepts, methods, findings, count(d) AS details
-            RETURN papers, concepts, methods, findings, details"""
-        )
-        if result:
-            return result[0]
-        return {"papers": 0, "concepts": 0, "methods": 0, "findings": 0, "details": 0}
+        result = await self.conn.aexecute_read(_STATS_QUERY)
+        return result[0] if result else _EMPTY_STATS.copy()
