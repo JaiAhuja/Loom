@@ -37,6 +37,13 @@ def _search_error(exc: Exception) -> str:
     return f"Document search failed: {exc}"
 
 
+def _format_search(docs: list[Document], scope_label: str) -> str:
+    return (
+        _format_docs(docs) if docs
+        else f"No relevant content found in the uploaded documents{scope_label}."
+    )
+
+
 def create_rag_tool(
     collection_name: str,
     store: VectorStoreManager | None = None,
@@ -83,13 +90,7 @@ def create_rag_tool(
             query: The search query to find relevant document content.
         """
         try:
-            docs = retriever.invoke(query)
-
-            if not docs:
-                return f"No relevant content found in the uploaded documents{scope_label}."
-
-            return _format_docs(docs)
-
+            return _format_search(retriever.invoke(query), scope_label)
         except Exception as e:
             logger.error(f"Document search failed for query '{query}': {type(e).__name__}: {e}", exc_info=True)
             return _search_error(e)
@@ -97,13 +98,7 @@ def create_rag_tool(
     async def _aquery_documents(query: str) -> str:
         """Async search through uploaded PDF documents for relevant information."""
         try:
-            docs = await retriever.ainvoke(query)
-
-            if not docs:
-                return f"No relevant content found in the uploaded documents{scope_label}."
-
-            return _format_docs(docs)
-
+            return _format_search(await retriever.ainvoke(query), scope_label)
         except Exception as e:
             logger.error(f"Async document search failed for query '{query}': {type(e).__name__}: {e}", exc_info=True)
             return _search_error(e)

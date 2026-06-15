@@ -264,6 +264,18 @@ class KnowledgeGraphQueries:
                 seen_nodes.add(paper_id)
                 paper_metadata[paper_id] = node_data
 
+        def _paper_id(row: dict) -> str:
+            doc_id = row["paper_doc"] or row["paper"]
+            paper_id = f"paper:{doc_id}"
+            if paper_id not in seen_nodes:
+                _add_paper_node(doc_id, row["paper"], row.get("paper_domain"))
+            return paper_id
+
+        def _add_node(node_id: str, **attributes) -> None:
+            if node_id not in seen_nodes:
+                nodes.append({"id": node_id, **attributes})
+                seen_nodes.add(node_id)
+
         # --- Papers <-[DISCUSSES]-> Concepts (with optional domain/paper filters) ---
         filters = []
         params: dict = {"limit": limit}
@@ -297,24 +309,18 @@ class KnowledgeGraphQueries:
             )
 
             for row in results:
-                paper_id = f"paper:{row['paper_doc'] or row['paper']}"
+                paper_id = _paper_id(row)
                 concept_id = f"concept:{row['concept']}"
-
-                if paper_id not in seen_nodes:
-                    _add_paper_node(row['paper_doc'] or row['paper'], row["paper"], row.get('paper_domain'))
-
-                if concept_id not in seen_nodes:
-                    nodes.append({
-                        "id": concept_id,
-                        "label": row["concept"],
-                        "title": "\n".join(filter(None, [
-                            f"{row['concept']} ({row.get('concept_domain', '')})",
-                            row.get("concept_description") or "",
-                        ])),
-                        "group": "concept",
-                        "size": 15,
-                    })
-                    seen_nodes.add(concept_id)
+                _add_node(
+                    concept_id,
+                    label=row["concept"],
+                    title="\n".join(filter(None, [
+                        f"{row['concept']} ({row.get('concept_domain', '')})",
+                        row.get("concept_description") or "",
+                    ])),
+                    group="concept",
+                    size=15,
+                )
 
                 edges.append({
                     "from": paper_id,
@@ -334,22 +340,18 @@ class KnowledgeGraphQueries:
                 params,
             )
             for row in detail_results:
-                paper_id = f"paper:{row['paper_doc'] or row['paper']}"
+                paper_id = _paper_id(row)
                 detail_id = f"detail:{row['detail_key']}"
-                if paper_id not in seen_nodes:
-                    _add_paper_node(row["paper_doc"] or row["paper"], row["paper"], row.get("paper_domain"))
-                if detail_id not in seen_nodes:
-                    nodes.append({
-                        "id": detail_id,
-                        "label": row.get("category", "detail").replace("_", " ").title(),
-                        "title": "\n\n".join(filter(None, [
-                            row.get("text") or "",
-                            f"Evidence: {row.get('evidence')}" if row.get("evidence") else "",
-                        ])),
-                        "group": "detail",
-                        "size": 13,
-                    })
-                    seen_nodes.add(detail_id)
+                _add_node(
+                    detail_id,
+                    label=row.get("category", "detail").replace("_", " ").title(),
+                    title="\n\n".join(filter(None, [
+                        row.get("text") or "",
+                        f"Evidence: {row.get('evidence')}" if row.get("evidence") else "",
+                    ])),
+                    group="detail",
+                    size=13,
+                )
                 edges.append({
                     "from": paper_id,
                     "to": detail_id,
@@ -367,19 +369,15 @@ class KnowledgeGraphQueries:
                 params,
             )
             for row in method_results:
-                paper_id = f"paper:{row['paper_doc'] or row['paper']}"
+                paper_id = _paper_id(row)
                 method_id = f"method:{row['method']}"
-                if paper_id not in seen_nodes:
-                    _add_paper_node(row["paper_doc"] or row["paper"], row["paper"], row.get("paper_domain"))
-                if method_id not in seen_nodes:
-                    nodes.append({
-                        "id": method_id,
-                        "label": row["method"],
-                        "title": row.get("description") or row["method"],
-                        "group": "method",
-                        "size": 14,
-                    })
-                    seen_nodes.add(method_id)
+                _add_node(
+                    method_id,
+                    label=row["method"],
+                    title=row.get("description") or row["method"],
+                    group="method",
+                    size=14,
+                )
                 edges.append({
                     "from": paper_id,
                     "to": method_id,
@@ -398,22 +396,18 @@ class KnowledgeGraphQueries:
                 params,
             )
             for row in finding_results:
-                paper_id = f"paper:{row['paper_doc'] or row['paper']}"
+                paper_id = _paper_id(row)
                 finding_id = f"finding:{row['finding_key']}"
-                if paper_id not in seen_nodes:
-                    _add_paper_node(row["paper_doc"] or row["paper"], row["paper"], row.get("paper_domain"))
-                if finding_id not in seen_nodes:
-                    nodes.append({
-                        "id": finding_id,
-                        "label": "Finding",
-                        "title": "\n".join(filter(None, [
-                            row.get("claim") or "",
-                            f"Evidence type: {row.get('evidence_type')}" if row.get("evidence_type") else "",
-                        ])),
-                        "group": "finding",
-                        "size": 13,
-                    })
-                    seen_nodes.add(finding_id)
+                _add_node(
+                    finding_id,
+                    label="Finding",
+                    title="\n".join(filter(None, [
+                        row.get("claim") or "",
+                        f"Evidence type: {row.get('evidence_type')}" if row.get("evidence_type") else "",
+                    ])),
+                    group="finding",
+                    size=13,
+                )
                 edges.append({
                     "from": paper_id,
                     "to": finding_id,

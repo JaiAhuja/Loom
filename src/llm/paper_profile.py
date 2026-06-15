@@ -163,6 +163,11 @@ def _parse_profile_response(response: Any) -> dict | None:
     return parsed
 
 
+def _profile_from_response(response: Any) -> Optional[PaperProfile]:
+    parsed = _parse_profile_response(response)
+    return _build_profile(parsed) if parsed is not None else None
+
+
 def _normalise_detail(item):
     if isinstance(item, str):
         return {"text": item, "evidence": ""}
@@ -267,15 +272,12 @@ def extract_paper_profile(
     """
     chain = _PROMPT_TEMPLATE | llm
     try:
-        response = chain.invoke(_prompt_inputs(markdown_text, file_name, budget))
-        parsed = _parse_profile_response(response)
-        if parsed is None:
-            return None
+        return _profile_from_response(
+            chain.invoke(_prompt_inputs(markdown_text, file_name, budget))
+        )
     except Exception as exc:
         logger.warning("Paper profile extraction failed: %s", exc, exc_info=True)
         return None
-
-    return _build_profile(parsed)
 
 
 async def aextract_paper_profile(
@@ -290,15 +292,12 @@ async def aextract_paper_profile(
     """
     chain = _PROMPT_TEMPLATE | llm
     try:
-        response = await chain.ainvoke(_prompt_inputs(markdown_text, file_name, budget))
-        parsed = _parse_profile_response(response)
-        if parsed is None:
-            return None
+        return _profile_from_response(
+            await chain.ainvoke(_prompt_inputs(markdown_text, file_name, budget))
+        )
     except Exception as exc:
         logger.warning("Async paper profile extraction failed: %s", exc, exc_info=True)
         return None
-
-    return _build_profile(parsed)
 
 
 def _build_profile(parsed: dict) -> Optional[PaperProfile]:

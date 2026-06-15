@@ -126,23 +126,7 @@ class ChatStore:
         metadata: Optional[ChatMetadata] = None,
     ) -> str:
         """Write ``messages`` to a new JSON file and return its path."""
-        if not messages:
-            raise ValueError("Cannot save an empty conversation.")
-
-        topic = _topic_from_messages(messages)
-        now = datetime.now()
-        filename = f"{now.strftime('%Y%m%d-%H%M%S')}-{_slugify(topic)}.json"
-        path = self._path_for(filename)
-
-        record = ChatRecord(
-            topic=topic,
-            messages=_normalise_messages(messages),
-            metadata=metadata or ChatMetadata(),
-            saved_at=now.strftime("%Y-%m-%d %H:%M:%S"),
-        )
-
-        self._write_record(path, record)
-        return path
+        return self._save(messages, metadata)
 
     def update(
         self,
@@ -151,30 +135,43 @@ class ChatStore:
         metadata: Optional[ChatMetadata] = None,
     ) -> str:
         """Update an existing JSON chat file and return its path."""
+        return self._save(messages, metadata, filename)
+
+    def _save(
+        self,
+        messages: list[dict],
+        metadata: Optional[ChatMetadata],
+        filename: str | None = None,
+    ) -> str:
         if not messages:
             raise ValueError("Cannot save an empty conversation.")
 
-        path = self._path_for(filename)
-
-        # Load existing record to preserve original topic and saved_at
-        try:
-            existing_record = self.load(filename)
-            topic = existing_record.topic
-            saved_at = existing_record.saved_at
-        except Exception:
-            # If load fails, treat as new save
-            logger.debug("Failed to load existing chat before update: %s", filename, exc_info=True)
+        now = datetime.now()
+        if filename:
+            path = self._path_for(filename)
+            try:
+                existing = self.load(filename)
+                topic, saved_at = existing.topic, existing.saved_at
+            except Exception:
+                logger.debug(
+                    "Failed to load existing chat before update: %s",
+                    filename,
+                    exc_info=True,
+                )
+                topic = _topic_from_messages(messages)
+                saved_at = now.strftime("%Y-%m-%d %H:%M:%S")
+        else:
             topic = _topic_from_messages(messages)
-            saved_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-        record = ChatRecord(
+            saved_at = now.strftime("%Y-%m-%d %H:%M:%S")
+            path = self._path_for(
+                f"{now.strftime('%Y%m%d-%H%M%S')}-{_slugify(topic)}.json"
+            )
+        self._write_record(path, ChatRecord(
             topic=topic,
             messages=_normalise_messages(messages),
             metadata=metadata or ChatMetadata(),
             saved_at=saved_at,
-        )
-
-        self._write_record(path, record)
+        ))
         return path
 
     def _write_record(self, path: str, record: ChatRecord) -> None:

@@ -148,31 +148,27 @@ class Neo4jConnection:
 
     async def aexecute_read(self, query: str, parameters: dict = None) -> list[dict]:
         """Async version of execute_read — uses a managed read transaction with auto-retry."""
-        async with self.async_driver.session(database=self.database) as session:
-
-            async def _work(tx):
-                try:
-                    result = await tx.run(query, parameters or {})
-                    return await result.data()
-                except Exception as e:
-                    logger.error(f"Async read query failed: {e}", exc_info=True)
-                    raise
-
-            return await session.execute_read(_work)
+        return await self._aexecute("read", query, parameters)
 
     async def aexecute_write(self, query: str, parameters: dict = None) -> list[dict]:
         """Async version of execute_write."""
-        async with self.async_driver.session(database=self.database) as session:
+        return await self._aexecute("write", query, parameters)
 
+    async def _aexecute(
+        self, mode: str, query: str, parameters: dict | None
+    ) -> list[dict]:
+        async with self.async_driver.session(database=self.database) as session:
             async def _work(tx):
                 try:
                     result = await tx.run(query, parameters or {})
                     return await result.data()
-                except Exception as e:
-                    logger.error(f"Async write query failed: {e}", exc_info=True)
+                except Exception as exc:
+                    logger.error(
+                        "Async %s query failed: %s", mode, exc, exc_info=True
+                    )
                     raise
 
-            return await session.execute_write(_work)
+            return await getattr(session, f"execute_{mode}")(_work)
 
     async def aexecute_write_tx(self, queries: list[tuple[str, dict]]) -> None:
         """Async version of execute_write_tx."""
