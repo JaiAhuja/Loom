@@ -144,7 +144,8 @@ def create_agent_node(llm, tools: list, system_prompt: str):
     chain = prompt | llm_with_tools
 
     def agent_node(state: AgentState) -> dict:
-        response = chain.invoke({"messages": state["messages"]})
+        messages = state.get("messages") or []
+        response = chain.invoke({"messages": messages})
         return {"messages": [response]}
 
     return agent_node
@@ -155,7 +156,10 @@ def should_continue(state: AgentState) -> str:
 
     Returns 'tools' if the last message has tool calls, 'end' otherwise.
     """
-    last_message = state["messages"][-1]
+    messages = state.get("messages") or []
+    if not messages:
+        return "end"
+    last_message = messages[-1]
     if hasattr(last_message, "tool_calls") and last_message.tool_calls:
         return "tools"
     return "end"

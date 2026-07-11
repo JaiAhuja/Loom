@@ -3,13 +3,19 @@
 from __future__ import annotations
 
 from html import escape
+import logging
 
 import streamlit as st
 
+logger = logging.getLogger(__name__)
+
 
 def inject_stylesheet(path: str = "static/style.css") -> None:
-    with open(path) as css:
-        st.markdown(f"<style>{css.read()}</style>", unsafe_allow_html=True)
+    try:
+        with open(path, encoding="utf-8") as css:
+            st.markdown(f"<style>{css.read()}</style>", unsafe_allow_html=True)
+    except OSError:
+        logger.debug("Stylesheet not available: %s", path, exc_info=True)
 
 
 def render_brand() -> None:

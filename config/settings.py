@@ -1,11 +1,13 @@
 import os
 from typing import Optional
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables and .env file."""
+
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     # Ollama
     OLLAMA_BASE_URL: str = "http://localhost:11434"
@@ -27,10 +29,10 @@ class Settings(BaseSettings):
 
     # Neo4j
     # Use bolt:// for standalone instances; neo4j:// is for Causal Clusters.
-    NEO4J_URI: str = "neo4j://127.0.0.1:7687"
+    NEO4J_URI: str = "bolt://127.0.0.1:7687"
     NEO4J_USERNAME: str = "neo4j"
     NEO4J_PASSWORD: str = "Loom-Weave-Threads"
-    NEO4J_DATABASE: Optional[str] = None
+    NEO4J_DATABASE: Optional[str] = "loom"
 
     # RAG
     RAG_TOP_K: int = 5
@@ -38,11 +40,6 @@ class Settings(BaseSettings):
     RAG_FETCH_K: int = 10
     # MMR lambda: 1.0 = pure relevance, 0.0 = pure diversity
     RAG_MMR_LAMBDA: float = 0.4
-
-    class Config:
-        env_file = ".env"
-        extra = "ignore"
-
 
 # Module-level singleton
 settings = Settings()

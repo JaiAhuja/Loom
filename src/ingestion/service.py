@@ -28,11 +28,23 @@ logger = logging.getLogger(__name__)
 
 # Directory where Markdown caches and profile sidecars are stored.
 _TXT_DIR = os.path.join("data", "txt")
+_DETAIL_FIELDS = (
+    "contributions",
+    "stands_for",
+    "builds_on",
+    "does_not_support",
+    "limitations",
+)
+
+
+def _safe_sidecar_stem(document_id: str) -> str:
+    """Return a path-safe sidecar stem for a document id."""
+    return os.path.basename(str(document_id or "document").replace("\\", "/")) or "document"
 
 
 def _profile_sidecar_path(document_id: str) -> str:
     """Return the path for the JSON sidecar of a PaperProfile."""
-    return os.path.join(_TXT_DIR, f"{document_id}_profile.json")
+    return os.path.join(_TXT_DIR, f"{_safe_sidecar_stem(document_id)}_profile.json")
 
 
 def _save_profile_sidecar(profile, document_id: str) -> None:
@@ -65,18 +77,7 @@ def _load_profile_sidecar(document_id: str):
 
 def _profile_has_details(profile) -> bool:
     """Return True if the profile contains any typed paper-detail entries."""
-    if profile is None:
-        return False
-    return any(
-        getattr(profile, field_name, None)
-        for field_name in (
-            "contributions",
-            "stands_for",
-            "builds_on",
-            "does_not_support",
-            "limitations",
-        )
-    )
+    return bool(profile) and any(getattr(profile, field_name, None) for field_name in _DETAIL_FIELDS)
 
 
 @dataclass
@@ -293,37 +294,7 @@ class IngestionService:
                 try:
                     self._kg_writer.write_paper_profile(profile, identity.document_id)
                     fr.kg_indexed = True
-                    # Cross-finding edge detection (requires a model; silently skipped otherwise).
-                    if model is not None:
-                        try:
-                            n_links = self._kg_writer.link_findings(
-                                profile, identity.document_id, model
-                            )
-                            if n_links:
-                                logger.info(
-                                    "KG: wrote %d cross-finding edge(s) for %s",
-                                    n_links, identity.document_id,
-                                )
-                        except Exception as link_exc:
-                            logger.warning(
-                                "Cross-finding linking failed for %s: %s",
-                                identity.document_id, link_exc,
-                            )
-                        # Cross-concept edge detection (requires a model; silently skipped otherwise).
-                        try:
-                            n_concept_links = self._kg_writer.link_concepts(
-                                profile, identity.document_id, model
-                            )
-                            if n_concept_links:
-                                logger.info(
-                                    "KG: wrote %d cross-concept edge(s) for %s",
-                                    n_concept_links, identity.document_id,
-                                )
-                        except Exception as concept_link_exc:
-                            logger.warning(
-                                "Cross-concept linking failed for %s: %s",
-                                identity.document_id, concept_link_exc,
-                            )
+                    self._link_cross_edges(profile, identity.document_id, model)
                 except Exception as kg_exc:
                     logger.warning(
                         "KG indexing failed for %s (RAG indexing succeeded): %s",
@@ -365,6 +336,17 @@ class IngestionService:
         except Exception as exc:
             logger.error("Ingestion failed for %s: %s", file_path, exc)
             return None
+
+    def _link_cross_edges(self, profile, document_id: str, model: str | None) -> None:
+        if model is None:
+            return
+        for label, method_name in (("finding", "link_findings"), ("concept", "link_concepts")):
+            try:
+                n_links = getattr(self._kg_writer, method_name)(profile, document_id, model)
+                if n_links:
+                    logger.info("KG: wrote %d cross-%s edge(s) for %s", n_links, label, document_id)
+            except Exception as exc:
+                logger.warning("Cross-%s linking failed for %s: %s", label, document_id, exc)
 
     def _write_kg_only(
         self,
@@ -429,21 +411,7 @@ class IngestionService:
 
         try:
             self._kg_writer.write_paper_profile(profile, document_id)
-            # Attempt cross-finding edge detection (needs the model).
-            if model is not None:
-                try:
-                    self._kg_writer.link_findings(profile, document_id, model)
-                except Exception as link_exc:
-                    logger.warning(
-                        "Cross-finding linking failed for %s: %s", document_id, link_exc
-                    )
-                # Attempt cross-concept edge detection (needs the model).
-                try:
-                    self._kg_writer.link_concepts(profile, document_id, model)
-                except Exception as concept_link_exc:
-                    logger.warning(
-                        "Cross-concept linking failed for %s: %s", document_id, concept_link_exc
-                    )
+            self._link_cross_edges(profile, document_id, model)
             return True
         except Exception as exc:
             logger.warning("KG write failed for %s: %s", document_id, exc)

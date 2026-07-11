@@ -1,8 +1,12 @@
 import atexit
+import logging
+import threading
 
 from neo4j import AsyncGraphDatabase, GraphDatabase
 
 from config.settings import settings
+
+logger = logging.getLogger(__name__)
 
 
 class Neo4jConnection:
@@ -32,6 +36,8 @@ class Neo4jConnection:
         self.database = database or getattr(settings, "NEO4J_DATABASE", None)
         self._driver = None
         self._async_driver = None
+        self._driver_lock = threading.RLock()
+        self._async_driver_lock = threading.RLock()
 
     def __enter__(self):
         return self
@@ -49,10 +55,11 @@ class Neo4jConnection:
     def driver(self):
         """Lazy-initialize the Neo4j driver."""
         if self._driver is None:
-            self._driver = GraphDatabase.driver(
-                self.uri,
-                auth=(self.username, self.password),
-                connection_acquisition_timeout=5.0,  # seconds; prevents indefinite sidebar block
+            self._driver = self._init_driver(
+                self._driver_lock,
+                "_driver",
+                GraphDatabase.driver,
+                connection_acquisition_timeout=5.0,
             )
         return self._driver
 
@@ -60,18 +67,34 @@ class Neo4jConnection:
     def async_driver(self):
         """Lazy-initialize the async Neo4j driver."""
         if self._async_driver is None:
-            self._async_driver = AsyncGraphDatabase.driver(
-                self.uri,
-                auth=(self.username, self.password),
+            self._async_driver = self._init_driver(
+                self._async_driver_lock,
+                "_async_driver",
+                AsyncGraphDatabase.driver,
             )
         return self._async_driver
 
+    def _init_driver(self, lock, attr: str, factory, **kwargs):
+        with lock:
+            driver = getattr(self, attr)
+            if driver is None:
+                driver = factory(self.uri, auth=(self.username, self.password), **kwargs)
+                setattr(self, attr, driver)
+            return driver
+
     def is_connected(self) -> bool:
-        """Check if Neo4j is reachable."""
+        """Check if Neo4j is reachable and the database instance is available.
+
+        Unlike verify_connectivity(), this actually executes a query to ensure
+        the database instance is running (not just the server).
+        """
         try:
             self.driver.verify_connectivity()
+            # Also execute a simple query to ensure the database instance is available
+            self.execute_read("RETURN 1")
             return True
         except Exception:
+            logger.debug("Neo4j connectivity check failed", exc_info=True)
             return False
 
     def execute_read(self, query: str, parameters: dict = None) -> list[dict]:
@@ -125,43 +148,33 @@ class Neo4jConnection:
 
     async def aexecute_read(self, query: str, parameters: dict = None) -> list[dict]:
         """Async version of execute_read — uses a managed read transaction with auto-retry."""
-        async with self.async_driver.session(database=self.database) as session:
-
-            async def _work(tx):
-                try:
-                    result = await tx.run(query, parameters or {})
-                    return await result.data()
-                except Exception as e:
-                    import logging
-                    logger = logging.getLogger(__name__)
-                    logger.error(f"Async read query failed: {e}", exc_info=True)
-                    raise
-
-            return await session.execute_read(_work)
+        return await self._aexecute("read", query, parameters)
 
     async def aexecute_write(self, query: str, parameters: dict = None) -> list[dict]:
         """Async version of execute_write."""
-        async with self.async_driver.session(database=self.database) as session:
+        return await self._aexecute("write", query, parameters)
 
+    async def _aexecute(
+        self, mode: str, query: str, parameters: dict | None
+    ) -> list[dict]:
+        async with self.async_driver.session(database=self.database) as session:
             async def _work(tx):
                 try:
                     result = await tx.run(query, parameters or {})
                     return await result.data()
-                except Exception as e:
-                    import logging
-                    logger = logging.getLogger(__name__)
-                    logger.error(f"Async write query failed: {e}", exc_info=True)
+                except Exception as exc:
+                    logger.error(
+                        "Async %s query failed: %s", mode, exc, exc_info=True
+                    )
                     raise
 
-            return await session.execute_write(_work)
+            return await getattr(session, f"execute_{mode}")(_work)
 
     async def aexecute_write_tx(self, queries: list[tuple[str, dict]]) -> None:
         """Async version of execute_write_tx."""
         async with self.async_driver.session(database=self.database) as session:
 
             async def _work(tx):
-                import logging
-                logger = logging.getLogger(__name__)
                 for i, (q, params) in enumerate(queries):
                     try:
                         result = await tx.run(q, params or {})
@@ -181,28 +194,34 @@ class Neo4jConnection:
     def close(self):
         """Close the Neo4j driver connection."""
         if self._driver is not None:
-            self._driver.close()
-            self._driver = None
+            with self._driver_lock:
+                if self._driver is not None:
+                    self._driver.close()
+                    self._driver = None
         if self._async_driver is not None:
             import asyncio
-            driver = self._async_driver
-            self._async_driver = None
+            with self._async_driver_lock:
+                driver = self._async_driver
+                self._async_driver = None
+            if driver is None:
+                return
             try:
                 loop = asyncio.get_running_loop()
-                # Event loop is running — register atexit handler to clean up the driver
-                def _cleanup_async_driver():
-                    try:
-                        asyncio.run(driver.close())
-                    except Exception:
-                        # Ignore errors during cleanup
-                        pass
-                atexit.register(_cleanup_async_driver)
+                task = loop.create_task(driver.close())
+                task.add_done_callback(self._log_async_close_failure)
             except RuntimeError:
                 # No running event loop — close synchronously
                 try:
                     asyncio.run(driver.close())
                 except Exception:
-                    pass
+                    logger.debug("Failed to close async Neo4j driver", exc_info=True)
+
+    @staticmethod
+    def _log_async_close_failure(task) -> None:
+        try:
+            task.result()
+        except Exception:
+            logger.debug("Failed to close async Neo4j driver", exc_info=True)
 
 
 # ---------------------------------------------------------------------------
@@ -214,6 +233,7 @@ class Neo4jConnection:
 # avoids the duplicate driver problem caused by per-page @st.cache_resource.
 
 _shared_connection: "Neo4jConnection | None" = None
+_shared_connection_lock = threading.RLock()
 
 
 def get_neo4j_connection() -> Neo4jConnection:
@@ -225,17 +245,20 @@ def get_neo4j_connection() -> Neo4jConnection:
     """
     global _shared_connection
     if _shared_connection is None:
-        _shared_connection = Neo4jConnection()
-        atexit.register(reset_neo4j_connection)
+        with _shared_connection_lock:
+            if _shared_connection is None:
+                _shared_connection = Neo4jConnection()
+                atexit.register(reset_neo4j_connection)
     return _shared_connection
 
 
 def reset_neo4j_connection() -> None:
     """Close and clear the singleton (primarily for tests)."""
     global _shared_connection
-    if _shared_connection is not None:
-        try:
-            _shared_connection.close()
-        except Exception:
-            pass
-        _shared_connection = None
+    with _shared_connection_lock:
+        if _shared_connection is not None:
+            try:
+                _shared_connection.close()
+            except Exception:
+                logger.debug("Failed to reset Neo4j singleton", exc_info=True)
+            _shared_connection = None

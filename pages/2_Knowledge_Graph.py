@@ -39,7 +39,24 @@ except Exception as e:
 queries = KnowledgeGraphQueries(conn)
 
 # --- Graph Statistics ---
-stats = queries.get_graph_stats()
+try:
+    stats = queries.get_graph_stats()
+except Exception as e:
+    error_msg = str(e).lower()
+    if "database unavailable" in error_msg or "database `neo4j` is currently unavailable" in error_msg:
+        st.error("❌ Neo4j database instance is not available.")
+        st.info(
+            "**To fix this:**\n"
+            "1. Open Neo4j Desktop\n"
+            "2. Find your database instance and click **Start** if it's stopped\n"
+            "3. Wait for it to show \"Started\" status\n"
+            "4. Refresh this page"
+        )
+        st.stop()
+    else:
+        st.error(f"❌ Error querying Neo4j: {e}")
+        st.stop()
+
 col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("📄 Papers", stats.get("papers", 0))
 col2.metric("💡 Concepts", stats.get("concepts", 0))

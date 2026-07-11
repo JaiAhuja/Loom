@@ -11,12 +11,17 @@ import os
 import re
 import uuid
 from dataclasses import dataclass
+from pathlib import Path
 
 
 # Whitelist for safe filenames: allow letters, digits, dots, hyphens, underscores, spaces.
 # Anything else is replaced to prevent directory-traversal via crafted filenames.
 _SAFE_FILENAME_RE = re.compile(r"[^A-Za-z0-9._\- ]+")
 _MAX_FILENAME_LEN = 200
+
+
+class DocumentIdentityError(RuntimeError):
+    """Raised when document identity or upload storage cannot be completed."""
 
 
 def _sanitize_filename(name: str) -> str:
@@ -48,9 +53,12 @@ def hash_bytes(data: bytes) -> str:
 def compute_file_hash(file_path: str) -> str:
     """Return the hex MD5 of the file at file_path, reading in 64 KiB blocks."""
     h = hashlib.md5(usedforsecurity=False)
-    with open(file_path, "rb") as f:
-        for block in iter(lambda: f.read(65_536), b""):
-            h.update(block)
+    try:
+        with open(file_path, "rb") as f:
+            for block in iter(lambda: f.read(65_536), b""):
+                h.update(block)
+    except OSError as exc:
+        raise DocumentIdentityError(f"Unable to read file for hashing: {file_path!r}") from exc
     return h.hexdigest()
 
 
@@ -67,7 +75,7 @@ def build_identity(file_bytes: bytes, original_filename: str, ingest_id: str) ->
     The provided ``original_filename`` is sanitised — path components and
     unsafe characters are stripped — before being stored on the identity
     so every downstream disk write is safe from path-traversal.
-    
+
     The document_id is now based on the filename for simpler, deterministic identity.
     """
     md5 = hash_bytes(file_bytes)  # Still computed for file storage organization
@@ -93,17 +101,26 @@ def save_upload(file_bytes: bytes, identity: DocumentIdentity, base_dir: str) ->
     # Re-sanitise defensively in case the identity was constructed by hand.
     safe_name = _sanitize_filename(identity.original_filename)
 
-    base_abs = os.path.abspath(base_dir)
-    dest_dir = os.path.join(base_abs, md5[:2], md5)
-    os.makedirs(dest_dir, exist_ok=True)
-    dest_path = os.path.abspath(os.path.join(dest_dir, safe_name))
+    try:
+        base_path = Path(base_dir).resolve()
+        dest_dir = base_path / md5[:2] / md5
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest_path = (dest_dir / safe_name).resolve()
+    except OSError as exc:
+        raise DocumentIdentityError(f"Unable to prepare upload directory: {base_dir!r}") from exc
 
-    # Hard boundary check — final path must be inside base_abs.
-    if os.path.commonpath([base_abs, dest_path]) != base_abs:
-        raise ValueError(f"Refusing to write upload outside base dir: {dest_path!r}")
+    # Hard boundary check. Path.relative_to is drive-aware on Windows, so
+    # different-drive paths become a clean rejection instead of a crash.
+    try:
+        dest_path.relative_to(base_path)
+    except ValueError as exc:
+        raise ValueError(f"Refusing to write upload outside base dir: {str(dest_path)!r}") from exc
 
-    if not os.path.exists(dest_path):
-        with open(dest_path, "wb") as f:
-            f.write(file_bytes)
+    try:
+        if not dest_path.exists():
+            with open(dest_path, "wb") as f:
+                f.write(file_bytes)
+    except OSError as exc:
+        raise DocumentIdentityError(f"Unable to save upload: {str(dest_path)!r}") from exc
 
-    return dest_path
+    return str(dest_path)

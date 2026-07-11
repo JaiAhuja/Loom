@@ -12,6 +12,7 @@ consume the same :class:`PaperProfile`, eliminating:
 from __future__ import annotations
 
 import logging
+import os
 import re
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -25,6 +26,14 @@ if TYPE_CHECKING:
     from langchain_core.messages import BaseMessage
 
 logger = logging.getLogger(__name__)
+_MAX_FILE_NAME_LEN = 240
+_DETAIL_FIELDS = (
+    "contributions",
+    "stands_for",
+    "builds_on",
+    "does_not_support",
+    "limitations",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -78,7 +87,7 @@ class PaperProfile(BaseModel):
 
 _STRICT_PRIORITY_KEYWORDS = {
     # The Gist/Summary
-    "abstract", "introduction", "summary", "synopsis", "executive summary", "highlights", 
+    "abstract", "introduction", "summary", "synopsis", "executive summary", "highlights",
     "in brief", "key points",
     "results", "findings", "outcomes", "observations", "analysis",
     "conclusion", "concluding remarks", "conclusions", "summary of findings",
@@ -87,16 +96,19 @@ _STRICT_PRIORITY_KEYWORDS = {
 
 def select_key_sections(text: str, budget: int = 75000) -> str:
     """Pick front matter and high-signal sections (abstract, results, conclusions) up to budget chars."""
+    if not isinstance(text, str):
+        return ""
+    budget = max(1_000, min(int(budget or 75_000), 150_000))
     parts = re.split(r"(?=^#{1,3}\s)", text, flags=re.MULTILINE)
-    
+
     front_matter: list[str] = []
     prioritised: list[str] = []
     seen_first_priority = False
 
     for part in parts:
-        if not part.strip(): 
+        if not part.strip():
             continue
-            
+
         header = part.split("\n", 1)[0].lower().strip("# \t")
         if any(kw in header for kw in _STRICT_PRIORITY_KEYWORDS):
             seen_first_priority = True
@@ -116,6 +128,50 @@ def select_key_sections(text: str, budget: int = 75000) -> str:
             break
 
     return selected or text[:budget]
+
+
+def _safe_file_name(file_name: str) -> str:
+    """Keep prompt context to a basename-sized filename."""
+    name = os.path.basename(str(file_name or "").replace("\\", "/")).replace("\x00", "")
+    return (name or "document")[:_MAX_FILE_NAME_LEN]
+
+
+def _response_text(response: Any) -> str:
+    """Extract text from a LangChain response object."""
+    content = getattr(response, "content", response)
+    return "" if content is None else content if isinstance(content, str) else str(content)
+
+
+def _prompt_inputs(markdown_text: str, file_name: str, budget: int) -> dict:
+    return {
+        "text": select_key_sections(markdown_text or "", budget=budget),
+        "file_name": _safe_file_name(file_name),
+        "domains": domains_as_string(),
+    }
+
+
+def _parse_profile_response(response: Any) -> dict | None:
+    """Parse and validate the JSON object returned by the LLM."""
+    parsed = parse_llm_json(_response_text(response))
+
+    if not isinstance(parsed, dict):
+        logger.warning("Paper profile extraction returned non-object JSON: %s", type(parsed).__name__)
+        return None
+    if "error" in parsed:
+        logger.warning("Failed to parse JSON: %s", parsed.get("error", "Unknown error"))
+        return None
+    return parsed
+
+
+def _profile_from_response(response: Any) -> Optional[PaperProfile]:
+    parsed = _parse_profile_response(response)
+    return _build_profile(parsed) if parsed is not None else None
+
+
+def _normalise_detail(item):
+    if isinstance(item, str):
+        return {"text": item, "evidence": ""}
+    return item if isinstance(item, dict) else None
 
 # ---------------------------------------------------------------------------
 # Extraction
@@ -151,7 +207,7 @@ You are a Senior Research Analyst. Your goal is to deconstruct academic papers i
         "human",
         """### INPUT DATA
 File: {file_name}
-Content: 
+Content:
 ---
 {text}
 ---
@@ -214,26 +270,14 @@ def extract_paper_profile(
         A :class:`PaperProfile` (possibly with empty fields) or ``None``
         if extraction/parsing failed.
     """
-    text = select_key_sections(markdown_text, budget=budget)
     chain = _PROMPT_TEMPLATE | llm
     try:
-        response = chain.invoke(
-            {
-                "text": text,
-                "file_name": file_name,
-                "domains": domains_as_string()
-            }
+        return _profile_from_response(
+            chain.invoke(_prompt_inputs(markdown_text, file_name, budget))
         )
-        parsed = parse_llm_json(response.content)
-
-        if not isinstance(parsed, dict) or "error" in parsed:
-            logger.warning("Failed to parse JSON: %s", (parsed or {}).get("error", "Unknown error"))
-            return None
     except Exception as exc:
-        logger.warning("Paper profile extraction failed: %s", exc)
+        logger.warning("Paper profile extraction failed: %s", exc, exc_info=True)
         return None
-
-    return _build_profile(parsed)
 
 
 async def aextract_paper_profile(
@@ -246,49 +290,31 @@ async def aextract_paper_profile(
 
     Uses ainvoke on the LLM chain for non-blocking execution.
     """
-    text = select_key_sections(markdown_text, budget=budget)
     chain = _PROMPT_TEMPLATE | llm
     try:
-        response = await chain.ainvoke(
-            {
-                "text": text,
-                "file_name": file_name,
-                "domains": domains_as_string()
-            }
+        return _profile_from_response(
+            await chain.ainvoke(_prompt_inputs(markdown_text, file_name, budget))
         )
-        parsed = parse_llm_json(response.content)
-
-        if not isinstance(parsed, dict) or "error" in parsed:
-            logger.warning("Failed to parse JSON: %s", (parsed or {}).get("error", "Unknown error"))
-            return None
     except Exception as exc:
-        logger.warning("Async paper profile extraction failed: %s", exc)
+        logger.warning("Async paper profile extraction failed: %s", exc, exc_info=True)
         return None
-
-    return _build_profile(parsed)
 
 
 def _build_profile(parsed: dict) -> Optional[PaperProfile]:
     """Validate and normalise parsed JSON into a PaperProfile."""
+    if not isinstance(parsed, dict):
+        return None
+    parsed = dict(parsed)
     # Normalise domains before validation so Pydantic doesn't have to
     parsed["domain"] = canonicalize_domain(parsed.get("domain", ""))
     for c in parsed.get("concepts", []) or []:
         if isinstance(c, dict):
             c["domain"] = canonicalize_domain(c.get("domain", ""))
-    for field_name in (
-        "contributions",
-        "stands_for",
-        "builds_on",
-        "does_not_support",
-        "limitations",
-    ):
-        normalised_details = []
-        for item in parsed.get(field_name, []) or []:
-            if isinstance(item, str):
-                normalised_details.append({"text": item, "evidence": ""})
-            elif isinstance(item, dict):
-                normalised_details.append(item)
-        parsed[field_name] = normalised_details
+    for field_name in _DETAIL_FIELDS:
+        parsed[field_name] = [
+            detail for item in parsed.get(field_name, []) or []
+            if (detail := _normalise_detail(item)) is not None
+        ]
 
     try:
         return PaperProfile(**parsed)

@@ -5,6 +5,7 @@ import os
 
 from src.ingestion.identity import (
     DocumentIdentity,
+    DocumentIdentityError,
     build_identity,
     compute_file_hash,
     generate_ingest_id,
@@ -36,6 +37,15 @@ def test_compute_file_hash(tmp_path):
     p = tmp_path / "test.pdf"
     p.write_bytes(content)
     assert compute_file_hash(str(p)) == hash_bytes(content)
+
+
+def test_compute_file_hash_missing_file_raises_contextual_error(tmp_path):
+    missing = tmp_path / "missing.pdf"
+    try:
+        compute_file_hash(str(missing))
+        assert False, "Should have raised DocumentIdentityError"
+    except DocumentIdentityError as exc:
+        assert "Unable to read file" in str(exc)
 
 
 # ---------------------------------------------------------------------------
@@ -155,6 +165,19 @@ def test_save_upload_different_filenames_same_hash(tmp_path):
     # Different filenames
     assert os.path.basename(p1) == "v1.pdf"
     assert os.path.basename(p2) == "v2.pdf"
+
+
+def test_save_upload_rejects_hand_built_traversal_identity(tmp_path):
+    identity = DocumentIdentity(
+        document_id="evil",
+        source_md5=hash_bytes(b"payload"),
+        ingest_id=generate_ingest_id(),
+        original_filename="../../evil.pdf",
+    )
+
+    path = save_upload(b"payload", identity, str(tmp_path))
+    assert os.path.basename(path) == "evil.pdf"
+    assert os.path.commonpath([str(tmp_path), path]) == str(tmp_path)
 
 
 # ---------------------------------------------------------------------------

@@ -4,6 +4,7 @@ import streamlit as st
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from config.settings import configure_langsmith
+from src.chat import ChatMetadata, ChatStore
 from src.evaluation import RAGJudge
 from src.graph import GraphBuilder
 from src.graph_db import get_neo4j_connection
@@ -38,6 +39,51 @@ configure_langsmith()
 graph_builder = GraphBuilder()
 
 
+def _persist_toggle(label: str, state_key: str, **kwargs):
+    value = st.toggle(label, value=st.session_state[state_key], **kwargs)
+    st.session_state[state_key] = value
+    return value
+
+
+def _chat_metadata(
+    model: str,
+    temperature: float,
+    use_rag: bool,
+    use_graph: bool,
+    neo4j_connected: bool,
+    collection_name: str | None,
+    paper_filter: str | None,
+    document_id_filter: str | None,
+) -> ChatMetadata:
+    return ChatMetadata(
+        model=model,
+        temperature=temperature,
+        use_rag=use_rag,
+        use_graph=use_graph and neo4j_connected,
+        collection_name=collection_name,
+        paper_filter=paper_filter,
+        document_id=document_id_filter,
+    )
+
+
+def _save_uploaded_pdf(file, ingest_id: str, pdf_dir: str) -> str:
+    raw_bytes = bytes(file.getbuffer())
+    return save_upload(
+        file_bytes=raw_bytes,
+        identity=build_identity(raw_bytes, file.name, ingest_id),
+        base_dir=pdf_dir,
+    )
+
+
+def _to_lang_message(msg: dict):
+    if not isinstance(msg, dict):
+        return None
+    content = msg.get("content", "")
+    return HumanMessage(content=content) if msg.get("role") == "user" else (
+        AIMessage(content=content) if msg.get("role") == "assistant" else None
+    )
+
+
 @st.cache_resource(show_spinner=False, max_entries=10)
 def _get_compiled_graph(
     use_rag: bool,
@@ -66,16 +112,10 @@ def _get_compiled_graph(
         document_id=document_id,
     )
 
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
-# Initialize persistent feature toggles from session state
-if "use_rag_persistent" not in st.session_state:
-    st.session_state.use_rag_persistent = False
-if "use_graph_persistent" not in st.session_state:
-    st.session_state.use_graph_persistent = False
-if "use_rag_eval_persistent" not in st.session_state:
-    st.session_state.use_rag_eval_persistent = False
+st.session_state.setdefault("messages", [])
+st.session_state.setdefault("use_rag_persistent", False)
+st.session_state.setdefault("use_graph_persistent", False)
+st.session_state.setdefault("use_rag_eval_persistent", False)
 
 
 # --- Sidebar ---
@@ -111,11 +151,10 @@ with st.sidebar:
     if available_models:
         # Try to find the default model in available models
         model_options = sorted(set(available_models))
-        default_idx = 0
-        for i, m in enumerate(model_options):
-            if m.startswith(default_model):
-                default_idx = i
-                break
+        default_idx = next(
+            (i for i, m in enumerate(model_options) if m.startswith(default_model)),
+            0,
+        )
         model = st.selectbox("Model", options=model_options, index=default_idx)
     else:
         model = st.text_input("Model", value=default_model)
@@ -133,25 +172,21 @@ with st.sidebar:
     st.divider()
     st.subheader("🔧 Features")
 
-    use_rag = st.toggle(
+    use_rag = _persist_toggle(
         "📄 Enable RAG (Document Q&A)",
-        value=st.session_state.use_rag_persistent,
+        "use_rag_persistent",
         key="use_rag_toggle",
         help="Enable querying your uploaded PDF documents.",
     )
-    # Store the current state for persistence across pages
-    st.session_state.use_rag_persistent = use_rag
 
-    use_graph = st.toggle(
+    use_graph = _persist_toggle(
         "🔗 Enable Knowledge Graph",
-        value=st.session_state.use_graph_persistent,
+        "use_graph_persistent",
         key="use_graph_toggle",
         disabled=not neo4j_connected,
         help="Query the Neo4j knowledge graph for cross-paper relationships. "
         "Requires Neo4j to be running.",
     )
-    # Store the current state for persistence across pages
-    st.session_state.use_graph_persistent = use_graph
 
     if use_graph and neo4j_connected:
         st.info(
@@ -159,15 +194,13 @@ with st.sidebar:
             "relationships between your papers and concepts."
         )
 
-    use_rag_eval = st.toggle(
+    use_rag_eval = _persist_toggle(
         "📊 Show RAG Quality Scores",
-        value=st.session_state.use_rag_eval_persistent,
+        "use_rag_eval_persistent",
         key="use_rag_eval_toggle",
         help="After each RAG-assisted reply, run an LLM-as-Judge evaluation "
         "(adds one extra LLM call per response).",
     )
-    # Store the current state for persistence across pages
-    st.session_state.use_rag_eval_persistent = use_rag_eval
 
     # ----- Document Management (when RAG is on) -----
     collection_name = None
@@ -278,22 +311,9 @@ with st.sidebar:
             target_collection = collection_name or "default"
 
             # Save uploaded files to disk under content-addressed paths
-            pdf_dir = os.path.join(".", "data", "pdfs")
             ingest_id = generate_ingest_id()
-            file_paths = []
-            for file in uploaded_files:
-                raw_bytes = bytes(file.getbuffer())  # single copy
-                identity = build_identity(
-                    file_bytes=raw_bytes,
-                    original_filename=file.name,
-                    ingest_id=ingest_id,
-                )
-                file_path = save_upload(
-                    file_bytes=raw_bytes,
-                    identity=identity,
-                    base_dir=pdf_dir,
-                )
-                file_paths.append(file_path)
+            pdf_dir = os.path.join(".", "data", "pdfs")
+            file_paths = [_save_uploaded_pdf(file, ingest_id, pdf_dir) for file in uploaded_files]
 
             # Wire Streamlit progress bar into the service callback
             progress = st.progress(0, text="Initializing...")
@@ -343,7 +363,7 @@ with st.sidebar:
         if existing_collections and collection_name in existing_collections:
             # Create a container outside the sidebar for the confirmation message
             _del_collection_confirm_area = st.container()
-            
+
             if confirm_destructive(
                 "🗑️ Delete Collection",
                 f"Delete collection **{collection_name}** and all its document chunks? This cannot be undone. (The Knowledge Graph will remain unchanged.)",
@@ -384,7 +404,7 @@ with st.sidebar:
                 mime="text/markdown",
                 use_container_width=True,
             )
-    
+
     # Save full chat to disk (explicit action)
     with col3:
         if st.button(
@@ -393,44 +413,23 @@ with st.sidebar:
             disabled=not st.session_state.messages,
             key="save_chat_button",
         ):
-            from src.chat import ChatMetadata, ChatStore
-
             chat_store = ChatStore()
+            metadata = _chat_metadata(
+                model, temperature, use_rag, use_graph, neo4j_connected,
+                collection_name, paper_filter, document_id_filter,
+            )
             try:
-                # Check if this is a resumed chat that should be updated
-                if "_resumed_from" in st.session_state:
-                    resumed_filename = st.session_state["_resumed_from"]
-                    saved_path = chat_store.update(
-                        resumed_filename,
-                        st.session_state.messages,
-                        metadata=ChatMetadata(
-                            model=model,
-                            temperature=temperature,
-                            use_rag=use_rag,
-                            use_graph=use_graph and neo4j_connected,
-                            collection_name=collection_name,
-                            paper_filter=paper_filter,
-                            document_id=document_id_filter,
-                        ),
-                    )
+                resumed_filename = st.session_state.get("_resumed_from")
+                if resumed_filename:
+                    saved_path = chat_store.update(resumed_filename, st.session_state.messages, metadata)
                     st.success(f"Updated chat: {os.path.basename(saved_path)}")
                 else:
-                    # New chat - create a new history entry
-                    saved_path = chat_store.save(
-                        st.session_state.messages,
-                        metadata=ChatMetadata(
-                            model=model,
-                            temperature=temperature,
-                            use_rag=use_rag,
-                            use_graph=use_graph and neo4j_connected,
-                            collection_name=collection_name,
-                            paper_filter=paper_filter,
-                            document_id=document_id_filter,
-                        ),
-                    )
+                    saved_path = chat_store.save(st.session_state.messages, metadata)
                     st.success(f"Saved to chat_history/{os.path.basename(saved_path)}")
             except ValueError as exc:
                 st.warning(str(exc))
+            except OSError as exc:
+                st.error(f"Could not save chat history: {exc}")
 
 
 # --- Main Chat Interface ---
@@ -446,8 +445,10 @@ if not st.session_state.messages:
 
 # ----- Display Chat History -----
 for i, msg in enumerate(st.session_state.messages):
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
+    if not isinstance(msg, dict):
+        continue
+    with st.chat_message(msg.get("role", "assistant")):
+        st.markdown(msg.get("content", ""))
 
 # ----- Chat Input -----
 if user_input := st.chat_input("Ask about any concept in DE, DS, or AI..."):
@@ -457,12 +458,7 @@ if user_input := st.chat_input("Ask about any concept in DE, DS, or AI..."):
     st.session_state.messages.append({"role": "user", "content": user_input})
 
     # Build message history for LangChain
-    lang_messages = []
-    for msg in st.session_state.messages:
-        if msg["role"] == "user":
-            lang_messages.append(HumanMessage(content=msg["content"]))
-        elif msg["role"] == "assistant":
-            lang_messages.append(AIMessage(content=msg["content"]))
+    lang_messages = [m for msg in st.session_state.messages if (m := _to_lang_message(msg))]
 
     # Build and invoke the graph
     with st.chat_message("assistant"):
@@ -480,9 +476,10 @@ if user_input := st.chat_input("Ask about any concept in DE, DS, or AI..."):
                     _vector_store=get_vector_store() if use_rag else None,
                 )
 
-                result = graph.invoke({"messages": lang_messages})
-                ai_msg = result["messages"][-1]
-                response = ai_msg.content or EMPTY_RESPONSE_MARKDOWN
+                result = graph.invoke({"messages": lang_messages}) or {}
+                result_messages = result.get("messages") or []
+                ai_msg = result_messages[-1] if result_messages else None
+                response = getattr(ai_msg, "content", None) or EMPTY_RESPONSE_MARKDOWN
 
             except Exception as e:
                 response = format_chat_error(e, model)

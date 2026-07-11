@@ -212,20 +212,23 @@ class DocumentProcessor:
         print(f"  [processor] Created {len(raw_chunks)} chunks", flush=True)
 
         # Step 5 — Convert to LangChain Documents with enriched metadata
+        base_metadata = {
+            "paper": paper_title,
+            "domain": domain,
+            "total_chunks": len(raw_chunks),
+            "source": file_name,
+            "file_path": file_path,
+        }
         enriched: list[Document] = []
         for i, chunk in enumerate(raw_chunks):
             enriched_text = self.chunker.contextualize(chunk=chunk)
             enriched.append(Document(
                 page_content=enriched_text,
                 metadata={
-                    "paper": paper_title,
-                    "domain": domain,
+                    **base_metadata,
                     "paper_chunk": f"chunk_{i + 1:03d}",
                     "chunk_type": "content",
                     "chunk_index": i,
-                    "total_chunks": len(raw_chunks),
-                    "source": file_name,
-                    "file_path": file_path,
                 },
             ))
 
@@ -234,14 +237,10 @@ class DocumentProcessor:
             summary_doc = Document(
                 page_content=summary_text,
                 metadata={
-                    "paper": paper_title,
-                    "domain": domain,
+                    **base_metadata,
                     "paper_chunk": "summary",
                     "chunk_type": "summary",
                     "chunk_index": -1,
-                    "total_chunks": len(raw_chunks),
-                    "source": file_name,
-                    "file_path": file_path,
                 },
             )
             enriched.insert(0, summary_doc)

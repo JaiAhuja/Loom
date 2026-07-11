@@ -40,7 +40,7 @@ class VectorStoreManager:
 
     def _get_collection_persist_dir(self, collection_name: str) -> str:
         """Get the persist directory for a specific collection.
-        
+
         Directory structure:
             data/chroma_db/
             ├── collection_1/
@@ -65,7 +65,7 @@ class VectorStoreManager:
     @property
     def client(self):
         """Lazy-initialize the default ChromaDB persistent client.
-        
+
         Deprecated: Use _get_client_for_collection() instead for collection-specific clients.
         """
         # For backwards compatibility, return a client for "default" collection
@@ -103,6 +103,14 @@ class VectorStoreManager:
             documents: List of LangChain Document objects to store.
             collection_name: Target collection name.
         """
+        if not documents:
+            logger.debug("No documents to add to collection %s", collection_name)
+            return
+
+        for doc in documents:
+            if not isinstance(getattr(doc, "metadata", None), dict):
+                doc.metadata = {}
+
         ids = [doc.metadata.get("chunk_id") for doc in documents]
 
         if all(ids):
@@ -193,7 +201,7 @@ class VectorStoreManager:
 
     def list_collections(self) -> list[str]:
         """List all available collection names.
-        
+
         Returns the list of subdirectories under base_persist_dir that are
         collection directories (contain chroma.sqlite3), each representing
         a collection.
@@ -221,6 +229,10 @@ class VectorStoreManager:
             results = collection.get(where={"document_id": document_id}, limit=1, include=[])
             return bool(results.get("ids"))
         except Exception:
+            logger.debug(
+                "Failed to check indexed document %s in collection %s",
+                document_id, collection_name, exc_info=True,
+            )
             return False
 
     def get_collection_count(self, collection_name: str) -> int:
@@ -248,11 +260,11 @@ class VectorStoreManager:
         """
         import os
         import shutil
-        
+
         # Delete from ChromaDB
         client = self._get_client_for_collection(collection_name)
         client.delete_collection(collection_name)
-        
+
         # Clean up the collection directory
         collection_dir = self._get_collection_persist_dir(collection_name)
         if os.path.isdir(collection_dir):

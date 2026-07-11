@@ -16,7 +16,7 @@ def test_settings_loads_with_defaults():
     assert s.OLLAMA_TEMPERATURE == 0.1
     assert s.CHROMA_PERSIST_DIR == "./data/chroma_db"
     assert s.OUTPUT_DIR == "./outputs"
-    assert s.NEO4J_URI == "neo4j://127.0.0.1:7687"
+    assert s.NEO4J_URI == "bolt://127.0.0.1:7687"
     assert s.NEO4J_DATABASE is None
     assert s.RAG_TOP_K == 5
 

@@ -6,8 +6,9 @@ whenever a new PDF is processed and a PaperProfile has been extracted.
 
 from __future__ import annotations
 
-import logging
 import hashlib
+import json
+import logging
 from typing import TYPE_CHECKING
 
 from langchain_core.prompts import ChatPromptTemplate
@@ -34,6 +35,8 @@ from src.graph_db.schema import (
     make_concept_key,
     make_finding_key,
 )
+from src.llm import get_llm
+from src.utils.json_parser import parse_llm_json
 
 if TYPE_CHECKING:
     from src.llm.paper_profile import PaperProfile
@@ -255,13 +258,15 @@ class KnowledgeGraphWriter:
         if not existing_findings:
             return 0
 
-        relations = self._call_llm_for_finding_links(
-            new_findings, existing_findings, model
+        relations = self._call_llm_for_links(
+            _FINDING_LINKS_PROMPT,
+            new_findings,
+            existing_findings,
+            model,
+            CROSS_FINDING_RELS,
+            "findings",
         )
-        if not relations:
-            return 0
-
-        return self._write_finding_links(relations)
+        return self._write_links(relations, FINDING, "finding_key", "finding")
 
     def link_concepts(
         self,
@@ -330,13 +335,15 @@ class KnowledgeGraphWriter:
         if not existing_concepts:
             return 0
 
-        relations = self._call_llm_for_concept_links(
-            new_concepts, existing_concepts, model
+        relations = self._call_llm_for_links(
+            _CONCEPT_LINKS_PROMPT,
+            new_concepts,
+            existing_concepts,
+            model,
+            CROSS_CONCEPT_RELS,
+            "concepts",
         )
-        if not relations:
-            return 0
-
-        return self._write_concept_links(relations)
+        return self._write_links(relations, CONCEPT, "concept_key", "concept")
 
     # ------------------------------------------------------------------
     # Private helpers
@@ -466,177 +473,94 @@ class KnowledgeGraphWriter:
         )
 
     def _write_findings(self, profile: "PaperProfile", document_id: str) -> None:
-        """Delete existing findings and create new ones in a single transaction.
-
-        Each Finding node is stamped with a stable ``finding_key`` derived from
-        the paper title + claim so cross-finding edges can reference nodes by a
-        reliable identity handle.
-
-        Batching the DELETE and all CREATEs into one ``execute_write_tx`` call
-        prevents data loss if the process crashes between the delete and the
-        inserts (the old behaviour left the paper with zero findings).
-        """
+        """Replace a paper's findings atomically using one batched UNWIND."""
         paper_title = profile.title or document_id
-
-        # Build the full batch: DELETE first, then one CREATE per finding.
-        queries: list[tuple[str, dict]] = [
+        items = [
+            {
+                "finding_key": make_finding_key(paper_title, finding.claim),
+                "claim": finding.claim,
+                "evidence_type": finding.evidence_type,
+            }
+            for finding in profile.findings
+        ]
+        queries = [
             (
                 f"""MATCH (p:{PAPER} {{document_id: $document_id}})-[:{HAS_FINDING}]->(f:{FINDING})
                 DETACH DELETE f""",
                 {"document_id": document_id},
             )
         ]
-        for finding in profile.findings:
-            finding_key = make_finding_key(paper_title, finding.claim)
+        if items:
             queries.append((
-                f"""MATCH (p:{PAPER} {{document_id: $document_id}})
+                f"""UNWIND $items AS item
+                MATCH (p:{PAPER} {{document_id: $document_id}})
                 CREATE (f:{FINDING} {{
-                    finding_key:    $finding_key,
-                    claim:          $claim,
-                    evidence_type:  $evidence_type,
+                    finding_key: item.finding_key,
+                    claim: item.claim,
+                    evidence_type: item.evidence_type,
                     paper_document_id: $document_id,
-                    paper_title:    $paper_title
+                    paper_title: $paper_title
                 }})
                 CREATE (p)-[:{HAS_FINDING}]->(f)""",
                 {
                     "document_id": document_id,
-                    "finding_key": finding_key,
-                    "claim": finding.claim,
-                    "evidence_type": finding.evidence_type,
                     "paper_title": paper_title,
+                    "items": items,
                 },
             ))
-
         self._conn.execute_write_tx(queries)
 
-    def _call_llm_for_finding_links(
-        self,
-        new_findings: list[dict],
-        existing_findings: list[dict],
+    @staticmethod
+    def _call_llm_for_links(
+        prompt: ChatPromptTemplate,
+        new_items: list[dict],
+        existing_items: list[dict],
         model: str,
+        allowed_relations: set[str] | frozenset[str],
+        item_name: str,
     ) -> list[dict]:
-        """Ask an LLM to identify SUPPORTS/CONTRADICTS/EXTENDS pairs.
-
-        Uses the module-level ``_FINDING_LINKS_PROMPT`` (a ``ChatPromptTemplate``)
-        so the system role and human content are clearly separated and composable.
-
-        Returns a (possibly empty) list of ``{source, target, relation}`` dicts
-        where ``source`` and ``target`` are ``finding_key`` strings.
-        """
-        import json
-        from src.llm import get_llm
-        from src.utils.json_parser import parse_llm_json
-
-        llm = get_llm(model=model, temperature=0.0, require_json=True)
-        chain = _FINDING_LINKS_PROMPT | llm
-
+        """Ask the LLM for validated relationship triples."""
+        chain = prompt | get_llm(model=model, temperature=0.0, require_json=True)
         try:
-            response = chain.invoke({
-                "new_findings_json": json.dumps(new_findings, indent=2),
-                "existing_findings_json": json.dumps(existing_findings, indent=2),
-            })
-            content = response.content
-            parsed = parse_llm_json(content)
+            parsed = parse_llm_json(chain.invoke({
+                f"new_{item_name}_json": json.dumps(new_items, indent=2),
+                f"existing_{item_name}_json": json.dumps(existing_items, indent=2),
+            }).content)
             if not isinstance(parsed, list):
                 return []
-            valid = [
-                r for r in parsed
-                if isinstance(r, dict)
-                and r.get("relation") in CROSS_FINDING_RELS
-                and r.get("source")
-                and r.get("target")
+            return [
+                relation for relation in parsed
+                if isinstance(relation, dict)
+                and relation.get("relation") in allowed_relations
+                and relation.get("source")
+                and relation.get("target")
             ]
-            return valid
         except Exception as exc:
-            logger.warning("LLM call for finding links failed: %s", exc)
+            logger.warning("LLM call for %s links failed: %s", item_name, exc)
             return []
 
-    def _write_finding_links(self, relations: list[dict]) -> int:
-        """Write cross-finding edges returned by the LLM.
-
-        Uses MERGE so repeated ingestion does not create duplicate edges.
-        Returns the number of edge write-attempts (some may merge onto existing).
-        """
-        queries: list[tuple[str, dict]] = []
-        for rel in relations:
-            rel_type = rel["relation"]  # already validated in CROSS_FINDING_RELS
-            queries.append((
-                f"""MATCH (src:{FINDING} {{finding_key: $source}})
-                MATCH (tgt:{FINDING} {{finding_key: $target}})
-                MERGE (src)-[:{rel_type}]->(tgt)""",
-                {"source": rel["source"], "target": rel["target"]},
-            ))
-        if not queries:
+    def _write_links(
+        self,
+        relations: list[dict],
+        node_label: str,
+        key_property: str,
+        link_name: str,
+    ) -> int:
+        """Write validated relationship triples with idempotent MERGE queries."""
+        if not relations:
             return 0
+        queries = [
+            (
+                f"""MATCH (src:{node_label} {{{key_property}: $source}})
+                MATCH (tgt:{node_label} {{{key_property}: $target}})
+                MERGE (src)-[:{relation['relation']}]->(tgt)""",
+                {"source": relation["source"], "target": relation["target"]},
+            )
+            for relation in relations
+        ]
         try:
             self._conn.execute_write_tx(queries)
             return len(queries)
         except Exception as exc:
-            logger.warning("Writing finding links failed: %s", exc)
-            return 0
-
-    def _call_llm_for_concept_links(
-        self,
-        new_concepts: list[dict],
-        existing_concepts: list[dict],
-        model: str,
-    ) -> list[dict]:
-        """Ask an LLM to identify RELATED_TO/SUBTOPIC_OF/EXTENDS concept pairs.
-
-        Uses the module-level ``_CONCEPT_LINKS_PROMPT`` (a ``ChatPromptTemplate``)
-        so the system role and human content are clearly separated and composable.
-
-        Returns a (possibly empty) list of ``{source, target, relation}`` dicts
-        where ``source`` and ``target`` are ``concept_key`` strings.
-        """
-        import json
-        from src.llm import get_llm
-        from src.utils.json_parser import parse_llm_json
-
-        llm = get_llm(model=model, temperature=0.0, require_json=True)
-        chain = _CONCEPT_LINKS_PROMPT | llm
-
-        try:
-            response = chain.invoke({
-                "new_concepts_json": json.dumps(new_concepts, indent=2),
-                "existing_concepts_json": json.dumps(existing_concepts, indent=2),
-            })
-            content = response.content
-            parsed = parse_llm_json(content)
-            if not isinstance(parsed, list):
-                return []
-            valid = [
-                r for r in parsed
-                if isinstance(r, dict)
-                and r.get("relation") in CROSS_CONCEPT_RELS
-                and r.get("source")
-                and r.get("target")
-            ]
-            return valid
-        except Exception as exc:
-            logger.warning("LLM call for concept links failed: %s", exc)
-            return []
-
-    def _write_concept_links(self, relations: list[dict]) -> int:
-        """Write cross-concept edges returned by the LLM.
-
-        Uses MERGE so repeated ingestion does not create duplicate edges.
-        Returns the number of edge write-attempts (some may merge onto existing).
-        """
-        queries: list[tuple[str, dict]] = []
-        for rel in relations:
-            rel_type = rel["relation"]  # already validated in CROSS_CONCEPT_RELS
-            queries.append((
-                f"""MATCH (src:{CONCEPT} {{concept_key: $source}})
-                MATCH (tgt:{CONCEPT} {{concept_key: $target}})
-                MERGE (src)-[:{rel_type}]->(tgt)""",
-                {"source": rel["source"], "target": rel["target"]},
-            ))
-        if not queries:
-            return 0
-        try:
-            self._conn.execute_write_tx(queries)
-            return len(queries)
-        except Exception as exc:
-            logger.warning("Writing concept links failed: %s", exc)
+            logger.warning("Writing %s links failed: %s", link_name, exc)
             return 0
