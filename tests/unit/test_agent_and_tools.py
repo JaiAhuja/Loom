@@ -101,6 +101,22 @@ def test_agent_routing_stops_at_tool_iteration_limit():
     assert should_continue({"messages": [message], "tool_iterations": 4}) == "end"
 
 
+def test_agent_routing_stops_after_repeated_empty_tool_results():
+    messages = [
+        ToolMessage(content="[TOOL_RESULT status=empty] nothing found", tool_call_id="1"),
+        ToolMessage(content="[TOOL_RESULT status=stale_document] missing", tool_call_id="2"),
+    ]
+    assert should_continue({"messages": messages}) == "end"
+
+
+def test_agent_routing_stops_after_different_failed_tool_calls():
+    messages = [
+        ToolMessage(content="[TOOL_ERROR kind=dependency_unavailable] unavailable", tool_call_id="1"),
+        ToolMessage(content="[TOOL_ERROR kind=execution_failed] failed", tool_call_id="2"),
+    ]
+    assert should_continue({"messages": messages}) == "end"
+
+
 def test_agent_stops_when_model_repeats_the_same_tool_call():
     tool_call = {"name": "x", "args": {}, "id": "1", "type": "tool_call"}
 
@@ -173,7 +189,9 @@ def test_safe_graph_tool_rejects_invalid_params_and_formats_results():
     params, error = _parse_params('{"title": "Paper"}')
     assert params == {"title": "Paper"} and error is None
     _, error = _parse_params("not json")
-    assert "Invalid params" in error
+    assert "valid JSON object" in error
+    _, error = _parse_params("[]")
+    assert "JSON object" in error
     assert "Papers in the graph" in _format_result("paper_list", [{"title": "Paper", "domain": "AI"}])
     assert "No results" in _format_result("graph_stats", {})
 
@@ -181,6 +199,6 @@ def test_safe_graph_tool_rejects_invalid_params_and_formats_results():
         def get_graph_stats(self):
             return {"papers": 1, "concepts": 2}
 
-    tool = create_safe_graph_tool(SimpleNamespace())
+    tool = create_safe_graph_tool(SimpleNamespace(execute_read=lambda *args, **kwargs: []))
     tool._svc = Queries() if hasattr(tool, "_svc") else None
     assert tool.name == "query_knowledge_graph"

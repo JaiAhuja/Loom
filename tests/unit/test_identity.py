@@ -8,12 +8,14 @@ import pytest
 from src.services.ingestion.identity import (
     DocumentIdentity,
     DocumentIdentityError,
+    MetadataIntegrityError,
     build_identity,
     compute_file_hash,
     generate_ingest_id,
     hash_bytes,
     make_document_id,
     save_upload,
+    validate_metadata_identity,
 )
 
 pytestmark = pytest.mark.unit
@@ -165,3 +167,25 @@ def test_document_identity_is_immutable():
         assert False, "Should have raised FrozenInstanceError"
     except AttributeError:
         pass
+
+
+def test_metadata_identity_requires_canonical_ids_and_valid_optional_fields():
+    valid = {
+        "document_id": "paper",
+        "chunk_id": hashlib.md5(b"chunk", usedforsecurity=False).hexdigest(),
+        "paper_chunk": "chunk_001",
+        "source_md5": "source",
+        "ingest_id": "batch",
+    }
+    assert validate_metadata_identity(valid) is valid
+
+    with pytest.raises(MetadataIntegrityError, match="canonical document metadata"):
+        validate_metadata_identity({"document_id": "paper", "chunk_id": "not-valid"})
+    with pytest.raises(MetadataIntegrityError, match="paper_chunk"):
+        validate_metadata_identity(
+            {
+                "document_id": "paper",
+                "chunk_id": valid["chunk_id"],
+                "paper_chunk": "",
+            }
+        )

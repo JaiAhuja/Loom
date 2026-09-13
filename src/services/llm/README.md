@@ -14,6 +14,10 @@ consistent across chat, retrieval, evaluation, ingestion, and graph writes.
 - `PaperProfile` — typed paper title, domain, summary, concepts, methods, and
   findings.
 
+The provider functions create clients without a module-level cache. Resource
+reuse is owned by the caller (for example Streamlit's app resource cache), so
+separate services and tests do not share hidden model instances.
+
 Configuration comes from `config.settings.settings`; callers should not read
 environment variables directly. Paper profiling is intentionally a single LLM
 call and uses `common.parse_llm_json` to handle model output. See

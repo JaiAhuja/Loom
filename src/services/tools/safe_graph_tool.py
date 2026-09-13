@@ -38,6 +38,8 @@ _INTENT_HELP = "\n".join(
 
 def create_safe_graph_tool(conn: Neo4jConnection) -> Any:
     """Create the intent-based knowledge graph query tool."""
+    if conn is None or not callable(getattr(conn, "execute_read", None)):
+        raise TypeError("conn must be an explicitly owned Neo4j connection")
     svc = GraphQueryService(conn)
 
     _TOOL_DESCRIPTION = (
@@ -62,7 +64,10 @@ def create_safe_graph_tool(conn: Neo4jConnection) -> Any:
         try:
             result = svc.execute(intent, parsed_params)
         except ValueError as exc:
-            return f"Graph query error: {exc}\nSupported intents:\n{_INTENT_HELP}"
+            return (
+                f"[TOOL_ERROR kind=invalid_input] Graph query error: {exc}\n"
+                f"Supported intents:\n{_INTENT_HELP}"
+            )
         except Exception as exc:
             return _graph_error(exc, intent, async_label=False)
         return _format_service_result(result, intent, async_label=False)
@@ -94,10 +99,15 @@ def _parse_params(params: str) -> tuple[dict, str | None]:
         parsed = json.loads(params) if isinstance(params, str) else params
     except (json.JSONDecodeError, TypeError):
         return {}, (
-            f"Invalid params — expected a JSON object string, got: {params!r}\n"
+            f"[TOOL_ERROR kind=invalid_input] Params must be a valid JSON object string, got: {params!r}\n"
             f"Supported intents:\n{_INTENT_HELP}"
         )
-    return (parsed if isinstance(parsed, dict) else {}), None
+    if not isinstance(parsed, dict):
+        return {}, (
+            f"[TOOL_ERROR kind=invalid_input] Params must be a JSON object, got: {type(parsed).__name__}\n"
+            f"Supported intents:\n{_INTENT_HELP}"
+        )
+    return parsed, None
 
 
 def _graph_error(exc: Exception, intent: str, async_label: bool) -> str:
@@ -111,8 +121,8 @@ def _graph_error(exc: Exception, intent: str, async_label: bool) -> str:
         exc_info=True,
     )
     if "Connection" in type(exc).__name__ or "connection" in str(exc).lower():
-        return "Knowledge graph unavailable (connection error). Please try again."
-    return f"Graph query failed: {exc}"
+        return "[TOOL_ERROR kind=dependency_unavailable] Knowledge graph is unavailable (connection error)."
+    return f"[TOOL_ERROR kind=execution_failed] Graph query failed: {type(exc).__name__}: {exc}"
 
 
 def _format_service_result(result: Any, intent: str, async_label: bool) -> str:
@@ -124,7 +134,7 @@ def _format_service_result(result: Any, intent: str, async_label: bool) -> str:
             intent,
             result,
         )
-        return "Graph query failed: invalid result format."
+        return "[TOOL_ERROR kind=invalid_result] Graph query returned an invalid result format."
     return _format_result(result.get("intent") or intent, result.get("data"))
 
 
