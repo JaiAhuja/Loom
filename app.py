@@ -1,24 +1,22 @@
-"""Run the Loom Streamlit chat interface and coordinate its services."""
-
 import os
 
 import streamlit as st
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
-from config.settings import configure_langsmith, settings
-from src.services.chat import ChatMetadata, ChatStore
-from src.services.evaluation import RAGJudge
-from src.services.agent import GraphBuilder
-from src.services.knowledge_graph import get_neo4j_connection
-from src.services.ingestion import IngestionService
-from src.services.ingestion.identity import build_identity, generate_ingest_id, save_upload
-from src.services.ui.bootstrap import (
+from config.settings import configure_langsmith
+from src.chat import ChatMetadata, ChatStore
+from src.evaluation import RAGJudge
+from src.graph import GraphBuilder
+from src.graph_db import get_neo4j_connection
+from src.ingestion import IngestionService
+from src.ingestion.identity import build_identity, generate_ingest_id, save_upload
+from src.ui.bootstrap import (
     check_neo4j_status,
     check_ollama_status,
     get_document_processor,
     get_vector_store,
 )
-from src.services.ui.chrome import (
+from src.ui.chrome import (
     EMPTY_RESPONSE_MARKDOWN,
     format_chat_error,
     inject_stylesheet,
@@ -26,7 +24,9 @@ from src.services.ui.chrome import (
     render_hero,
     render_status_bar,
 )
-from src.services.ui.confirm import confirm_destructive
+from src.ui.confirm import confirm_destructive
+from config.settings import settings
+
 st.set_page_config(
     page_title="Loom",
     page_icon="🪡",
@@ -40,7 +40,6 @@ graph_builder = GraphBuilder()
 
 
 def _persist_toggle(label: str, state_key: str, **kwargs):
-    """Render a persistent toggle and synchronize its session-state value."""
     value = st.toggle(label, value=st.session_state[state_key], **kwargs)
     st.session_state[state_key] = value
     return value
@@ -56,7 +55,6 @@ def _chat_metadata(
     paper_filter: str | None,
     document_id_filter: str | None,
 ) -> ChatMetadata:
-    """Build chat metadata from the active model and retrieval settings."""
     return ChatMetadata(
         model=model,
         temperature=temperature,
@@ -69,7 +67,6 @@ def _chat_metadata(
 
 
 def _save_uploaded_pdf(file, ingest_id: str, pdf_dir: str) -> str:
-    """Persist an uploaded PDF using its content-based document identity."""
     raw_bytes = bytes(file.getbuffer())
     return save_upload(
         file_bytes=raw_bytes,
@@ -79,7 +76,6 @@ def _save_uploaded_pdf(file, ingest_id: str, pdf_dir: str) -> str:
 
 
 def _to_lang_message(msg: dict):
-    """Convert a stored chat message into its LangChain message type."""
     if not isinstance(msg, dict):
         return None
     content = msg.get("content", "")
@@ -122,9 +118,11 @@ st.session_state.setdefault("use_graph_persistent", False)
 st.session_state.setdefault("use_rag_eval_persistent", False)
 
 
+# --- Sidebar ---
 with st.sidebar:
     render_brand()
 
+    # ----- Ollama Status -----
     st.divider()
     is_connected, available_models = check_ollama_status()
 
@@ -144,11 +142,14 @@ with st.sidebar:
             st.caption(f"🔍 {neo4j_error}")
         st.caption("Use Neo4j Desktop")
 
+    # ----- Model Settings -----
     st.divider()
     st.subheader("⚙️ Model Settings")
 
+    # Model selection from available models
     default_model = settings.OLLAMA_MODEL
     if available_models:
+        # Try to find the default model in available models
         model_options = sorted(set(available_models))
         default_idx = next(
             (i for i, m in enumerate(model_options) if m.startswith(default_model)),
@@ -167,6 +168,7 @@ with st.sidebar:
         help="Lower = more focused, Higher = more creative",
     )
 
+    # ----- Feature Toggles -----
     st.divider()
     st.subheader("🔧 Features")
 
@@ -200,6 +202,7 @@ with st.sidebar:
         "(adds one extra LLM call per response).",
     )
 
+    # ----- Document Management (when RAG is on) -----
     collection_name = None
     paper_filter = None
     document_id_filter: str | None = None
@@ -211,6 +214,7 @@ with st.sidebar:
         store = get_vector_store()
         existing_collections = store.list_collections()
 
+        # Collection selection / creation
         col_tab1, col_tab2 = st.tabs(["Select", "Create New"])
 
         with col_tab1:
@@ -239,14 +243,17 @@ with st.sidebar:
                     st.session_state.selected_collection = new_collection
                     st.rerun()
 
+        # Apply persisted collection selection from session state
         if "selected_collection" in st.session_state:
             collection_name = st.session_state.selected_collection
 
+        # ----- Paper Filter Dropdown -----
         if collection_name:
             papers_in_collection = store.list_papers(collection_name)
             if papers_in_collection:
                 st.markdown("---")
 
+                # Dropdown is keyed by document_id; label shows title + domain
                 doc_id_options: list[str | None] = [None] + [
                     p["document_id"] for p in papers_in_collection
                 ]
@@ -273,12 +280,13 @@ with st.sidebar:
                     selected_meta = next(
                         p for p in papers_in_collection if p["document_id"] == selected_doc_id
                     )
-                    paper_filter = selected_meta["title"]
+                    paper_filter = selected_meta["title"]  # kept for UI chips
                     st.caption(
                         f"🔍 RAG scoped to: **{paper_filter}** · "
                         f"`{selected_meta['domain']}` · `{selected_meta['chunk_count']} chunks`"
                     )
                 else:
+                    # Show domain breakdown
                     domains = {}
                     for p in papers_in_collection:
                         d = p["domain"]
@@ -290,6 +298,7 @@ with st.sidebar:
                         f"🔍 Searching across {len(papers_in_collection)} paper(s) · {domain_summary}"
                     )
 
+        # PDF Upload
         st.markdown("---")
         uploaded_files = st.file_uploader(
             "Upload PDFs",
@@ -301,10 +310,12 @@ with st.sidebar:
         if uploaded_files and st.button("🔄 Process & Index Documents", use_container_width=True):
             target_collection = collection_name or "default"
 
+            # Save uploaded files to disk under content-addressed paths
             ingest_id = generate_ingest_id()
             pdf_dir = os.path.join(".", "data", "pdfs")
             file_paths = [_save_uploaded_pdf(file, ingest_id, pdf_dir) for file in uploaded_files]
 
+            # Wire Streamlit progress bar into the service callback
             progress = st.progress(0, text="Initializing...")
 
             def _on_progress(current: int, total: int, message: str):
@@ -313,6 +324,7 @@ with st.sidebar:
                     text=message,
                 )
 
+            # Run ingestion through the service
             processor = get_document_processor()
             svc = IngestionService(
                 processor=processor,
@@ -326,6 +338,7 @@ with st.sidebar:
                 on_progress=_on_progress,
             )
 
+            # Report per-file outcomes
             for fr in ing_result.file_results:
                 if fr.skipped:
                     kg_label = " + KG" if fr.kg_indexed else ""
@@ -346,7 +359,9 @@ with st.sidebar:
             progress.progress(1.0, text="Done!")
             st.rerun()
 
+        # Delete collection
         if existing_collections and collection_name in existing_collections:
+            # Create a container outside the sidebar for the confirmation message
             _del_collection_confirm_area = st.container()
 
             if confirm_destructive(
@@ -363,6 +378,7 @@ with st.sidebar:
                 st.success(f"Deleted collection: `{collection_name}`")
                 st.rerun()
 
+    # ----- Session Actions -----
     st.divider()
     st.subheader("Session")
 
@@ -375,7 +391,7 @@ with st.sidebar:
             st.rerun()
     with col2:
         if st.session_state.messages:
-            from src.services.chat import ChatRecord
+            from src.chat import ChatRecord
 
             full_export = ChatRecord(
                 topic="Conversation",
@@ -389,6 +405,7 @@ with st.sidebar:
                 use_container_width=True,
             )
 
+    # Save full chat to disk (explicit action)
     with col3:
         if st.button(
             "Save Chat to History",
@@ -415,6 +432,7 @@ with st.sidebar:
                 st.error(f"Could not save chat history: {exc}")
 
 
+# --- Main Chat Interface ---
 render_status_bar(
     model,
     collection_name=collection_name if use_rag else None,
@@ -425,19 +443,24 @@ render_status_bar(
 if not st.session_state.messages:
     render_hero()
 
+# ----- Display Chat History -----
 for i, msg in enumerate(st.session_state.messages):
     if not isinstance(msg, dict):
         continue
     with st.chat_message(msg.get("role", "assistant")):
         st.markdown(msg.get("content", ""))
 
+# ----- Chat Input -----
 if user_input := st.chat_input("Ask about any concept in DE, DS, or AI..."):
+    # Display user message
     with st.chat_message("user"):
         st.markdown(user_input)
     st.session_state.messages.append({"role": "user", "content": user_input})
 
+    # Build message history for LangChain
     lang_messages = [m for msg in st.session_state.messages if (m := _to_lang_message(msg))]
 
+    # Build and invoke the graph
     with st.chat_message("assistant"):
         result = {}
         with st.spinner("Thinking..."):
@@ -461,6 +484,7 @@ if user_input := st.chat_input("Ask about any concept in DE, DS, or AI..."):
             except Exception as e:
                 response = format_chat_error(e, model)
 
+        # --- LLM-as-a-Judge evaluation (opt-in; only when RAG tool was actually invoked) ---
         if use_rag and use_rag_eval:
             retrieved_chunks = [
                 msg.content
@@ -479,6 +503,8 @@ if user_input := st.chat_input("Ask about any concept in DE, DS, or AI..."):
                 if eval_result is not None:
                     response = response + eval_result.as_markdown()
 
+        # Render the response
         st.markdown(response)
 
+    # Save to session state
     st.session_state.messages.append({"role": "assistant", "content": response})

@@ -1,9 +1,9 @@
-"""Tests for src.services.chat.store — ChatStore save/load/search/delete behaviour."""
+"""Tests for src.chat.store — ChatStore save/load/search/delete behaviour."""
 
 import json
 import os
 
-from src.services.chat.store import ChatMetadata, ChatRecord, ChatStore
+from src.chat.store import ChatMetadata, ChatRecord, ChatStore
 
 
 def _msgs():
@@ -13,6 +13,9 @@ def _msgs():
     ]
 
 
+# ---------------------------------------------------------------------------
+# save
+# ---------------------------------------------------------------------------
 
 def test_save_writes_json_with_topic_and_metadata(tmp_path):
     store = ChatStore(directory=str(tmp_path))
@@ -50,6 +53,9 @@ def test_save_defaults_metadata_when_omitted(tmp_path):
     assert data["metadata"]["use_rag"] is False
 
 
+# ---------------------------------------------------------------------------
+# load
+# ---------------------------------------------------------------------------
 
 def test_load_roundtrips(tmp_path):
     store = ChatStore(directory=str(tmp_path))
@@ -81,11 +87,15 @@ def test_load_tolerates_unknown_metadata_keys(tmp_path):
     assert record.metadata.model == "m"
 
 
+# ---------------------------------------------------------------------------
+# list_chats / search / delete / render
+# ---------------------------------------------------------------------------
 
 def test_list_chats_returns_newest_first(tmp_path):
     store = ChatStore(directory=str(tmp_path))
     p1 = store.save([{"role": "user", "content": "first"}])
     p2 = store.save([{"role": "user", "content": "second"}])
+    # Force mtime ordering so this is deterministic even on fast filesystems.
     os.utime(p1, (1_700_000_000, 1_700_000_000))
     os.utime(p2, (1_700_000_100, 1_700_000_100))
 
@@ -140,6 +150,7 @@ def test_delete_removes_file(tmp_path):
 
     store.delete(fname)
     assert not os.path.exists(path)
+    # Deleting a missing file must not raise.
     store.delete(fname)
 
 

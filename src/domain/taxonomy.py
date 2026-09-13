@@ -9,6 +9,7 @@ source of truth.
 
 from __future__ import annotations
 
+# Canonical domain list (Title Case) — shared by RAG processor and KG extractor.
 DOMAINS: tuple[str, ...] = (
     "Artificial Intelligence",
     "Machine Learning",
@@ -32,6 +33,7 @@ DOMAINS: tuple[str, ...] = (
     "Other",
 )
 
+# Aliases for snake_case / abbreviated inputs normalised to Title Case.
 _ALIASES: dict[str, str] = {
     "ai_general": "Artificial Intelligence",
     "ai": "Artificial Intelligence",
@@ -68,6 +70,7 @@ _ALIASES: dict[str, str] = {
     "": "Other",
 }
 
+# Broad buckets for cross-domain concept comparison.
 _BUCKETS: dict[str, str] = {
     "Artificial Intelligence": "ai",
     "Machine Learning": "ai",
@@ -97,9 +100,11 @@ def canonicalize_domain(raw: str) -> str:
     if not raw:
         return "Other"
     trimmed = raw.strip()
+    # Exact canonical match (case-insensitive)
     for d in DOMAINS:
         if d.lower() == trimmed.lower():
             return d
+    # Alias map (snake_case)
     return _ALIASES.get(trimmed.lower(), "Other")
 
 
