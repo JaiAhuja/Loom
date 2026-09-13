@@ -191,6 +191,13 @@ The app will open in your browser at `http://localhost:8501`.
 
 ## 📁 Project Structure
 
+Loom uses a service-oriented modular monolith. The packages under
+`src/services/` group application capabilities by ownership and integration
+boundary, while `src/domain/` contains shared domain concepts. These are
+in-process services today; separating one into a deployable microservice later
+would require defining an API and moving its infrastructure boundary without
+changing the domain model.
+
 ```
 loom/
 ├── .gitignore
@@ -210,62 +217,45 @@ loom/
 │
 ├── src/
 │   ├── __init__.py
-│   ├── chat/
-│   │   ├── __init__.py
-│   │   └── store.py          # Chat history persistence (save/load/search JSON)
-│   │
 │   ├── domain/
 │   │   ├── __init__.py
 │   │   ├── paper.py          # Paper domain model
 │   │   └── taxonomy.py       # Canonical domain taxonomy (shared by RAG + KG)
 │   │
-│   ├── evaluation/
-│   │   ├── __init__.py
-│   │   └── judge.py          # LLM-as-a-Judge RAG quality scorer
-│   │
-│   ├── ingestion/
-│   │   ├── __init__.py
-│   │   ├── identity.py       # Document identity (filename-based doc_id, MD5, ingest_id)
-│   │   └── service.py        # Ingestion orchestration (PDF → RAG chunks)
-│   │
-│   ├── llm/
-│   │   ├── __init__.py
-│   │   ├── paper_profile.py  # Single-call LLM paper profiling (summary, details, entities)
-│   │   └── provider.py       # Ollama LLM & embeddings factory
-│   │
-│   ├── graph/
-│   │   ├── __init__.py
-│   │   ├── state.py          # LangGraph state schema
-│   │   ├── nodes.py          # Agent node, routing, system prompts
-│   │   └── builder.py        # Graph builder (assembles the agent)
-│   │
-│   ├── graph_db/
-│   │   ├── __init__.py
-│   │   ├── connection.py     # Neo4j connection manager
-│   │   ├── schema.py         # Graph schema (node/rel types, constraints)
-│   │   ├── queries.py        # Predefined graph queries + visualization
-│   │   ├── service.py        # Typed intent-based graph query service
-│   │   └── writer.py         # PaperProfile → Neo4j writer + relationship linker
-│   │
-│   ├── rag/
-│   │   ├── __init__.py
-│   │   ├── processor.py      # Docling PDF → chunks pipeline
-│   │   └── store.py          # ChromaDB vector store manager (upsert)
-│   │
-│   ├── tools/
-│   │   ├── __init__.py
-│   │   ├── rag_tool.py       # Document query tool factory
-│   │   └── safe_graph_tool.py # Intent-based graph query tool
-│   │
-│   ├── ui/
-│   │   ├── __init__.py
-│   │   ├── bootstrap.py      # Cached service checks & component factories
-│   │   ├── chrome.py         # Reusable Streamlit HTML snippets (brand, status bar)
-│   │   └── confirm.py        # Destructive-action confirmation helper
-│   │
-│   └── utils/
+│   └── services/
 │       ├── __init__.py
-│       └── json_parser.py    # Shared LLM JSON response parser
+│       ├── agent/
+│       │   ├── state.py      # LangGraph state schema
+│       │   ├── nodes.py      # Agent node, routing, system prompts
+│       │   └── builder.py    # Graph builder (assembles the agent)
+│       ├── chat/
+│       │   └── store.py      # Chat history persistence (save/load/search JSON)
+│       ├── common/
+│       │   └── json_parser.py # Shared LLM JSON response parser
+│       ├── evaluation/
+│       │   └── judge.py      # LLM-as-a-Judge RAG quality scorer
+│       ├── ingestion/
+│       │   ├── identity.py   # Document identity and content-addressed storage
+│       │   └── service.py    # PDF ingestion orchestration
+│       ├── knowledge_graph/
+│       │   ├── connection.py # Neo4j connection manager
+│       │   ├── schema.py     # Graph schema, constraints, and identity keys
+│       │   ├── queries.py    # Predefined graph queries and visualization data
+│       │   ├── service.py    # Typed intent-based graph query service
+│       │   └── writer.py     # PaperProfile to Neo4j writer and linker
+│       ├── llm/
+│       │   ├── paper_profile.py # Structured paper profiling
+│       │   └── provider.py   # Ollama LLM and embedding factories
+│       ├── retrieval/
+│       │   ├── processor.py  # Docling PDF to chunks pipeline
+│       │   └── store.py      # ChromaDB vector store manager
+│       ├── tools/
+│       │   ├── rag_tool.py   # Document query tool factory
+│       │   └── safe_graph_tool.py # Intent-based graph query tool
+│       └── ui/
+│           ├── bootstrap.py  # Cached dependency checks and factories
+│           ├── chrome.py     # Reusable Streamlit presentation components
+│           └── confirm.py    # Destructive-action confirmation helper
 │
 ├── data/
 │   ├── chat_history/         # Saved conversation JSON files
@@ -368,10 +358,10 @@ The architecture is designed for easy extension:
 
 ### Adding a New Tool
 
-1. Create a new file in `src/tools/`:
+1. Create a new file in `src/services/tools/`:
 
 ```python
-# src/tools/my_tool.py
+# src/services/tools/my_tool.py
 from langchain_core.tools import tool
 
 def create_my_tool():
@@ -383,7 +373,7 @@ def create_my_tool():
     return my_custom_tool
 ```
 
-2. Register it in the graph builder (`src/graph/builder.py`):
+2. Register it in the agent builder (`src/services/agent/builder.py`):
 
 ```python
 def _gather_tools(self, ...):
@@ -398,11 +388,11 @@ def _gather_tools(self, ...):
 
 ### Adding a New Document Loader
 
-Extend `DocumentProcessor` in `src/rag/processor.py` to support new file types beyond PDFs.
+Extend `DocumentProcessor` in `src/services/retrieval/processor.py` to support new file types beyond PDFs.
 
 ### Custom System Prompts
 
-Edit the prompts in `src/graph/nodes.py` to customize the agent's personality, expertise areas, or output format.
+Edit the prompts in `src/services/agent/nodes.py` to customize the agent's personality, expertise areas, or output format.
 
 ---
 

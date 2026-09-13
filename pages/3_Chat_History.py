@@ -1,13 +1,15 @@
-"""Chat History page - browse, search, resume, download, and delete saved chats.
+"""Render the saved-chat history page.
 
-JSON chats (from :mod:`src.chat.store`) are resumable; legacy ``.md``
-files are still listed but read-only.
+The page searches saved conversations by topic or message content, displays
+their metadata and formatted content, resumes JSON-backed conversations in
+the main chat interface, and supports Markdown download or deletion. Legacy
+Markdown records remain available for viewing but cannot be resumed.
 """
 
 import streamlit as st
 
-from src.chat import ChatStore
-from src.ui.confirm import confirm_destructive
+from src.services.chat import ChatStore
+from src.services.ui.confirm import confirm_destructive
 
 st.set_page_config(
     page_title="Chat History - Loom",
@@ -20,7 +22,6 @@ st.caption("Review, search, and resume previously saved conversations.")
 
 chat_store = ChatStore()
 
-# ----- Search -----
 search_q = st.text_input(
     "🔍 Search saved chats (topic or message content)",
     placeholder="e.g. graph theory, attention mechanism, ...",
@@ -38,17 +39,18 @@ if not entries:
         )
     st.stop()
 
-# ----- Sidebar: list of chats -----
 st.sidebar.subheader(f"Saved Chats ({len(entries)})")
 
 
 def _chat_label(entry: dict) -> str:
+    """Format a saved chat entry for the sidebar selector."""
     marker = "📝" if entry["type"] == "json" else "📄"
     ts = entry["modified"].strftime("%Y-%m-%d %H:%M")
     return f"{marker} {entry['topic'][:48]} · {ts}"
 
 
 def _entry_for_filename(filename: str) -> dict:
+    """Return the selected entry or a display-safe fallback."""
     fallback = {
         "filename": filename,
         "type": "json",
@@ -59,6 +61,7 @@ def _entry_for_filename(filename: str) -> dict:
 
 
 def _load_selected_record():
+    """Load the selected JSON chat or stop the page with an error."""
     try:
         return chat_store.load(selected_entry["filename"])
     except (OSError, ValueError) as exc:
@@ -73,13 +76,10 @@ selected_filename = st.sidebar.radio(
     label_visibility="collapsed",
 )
 
-# ----- Main panel: selected chat -----
 selected_entry = next((e for e in entries if e["filename"] == selected_filename), None)
 if selected_entry is None:
     st.stop()
 
-# Container created before the columns so it renders in full-width context;
-# the confirm_destructive widget uses it to avoid squeezing inside col_del.
 _del_confirm_area = st.container()
 
 col_title, col_resume, col_dl, col_del = st.columns([4, 1, 1, 1])
@@ -90,7 +90,6 @@ with col_title:
         f"{'Resumable JSON' if selected_entry['resumable'] else 'Legacy markdown (view-only)'}"
     )
 
-# Resume - only for JSON chats
 with col_resume:
     if selected_entry["resumable"]:
         if st.button("▶ Resume", use_container_width=True, type="primary"):
@@ -108,7 +107,6 @@ with col_resume:
     else:
         st.caption("—")
 
-# Download
 try:
     md_content = chat_store.render_markdown(selected_entry["filename"])
 except (OSError, ValueError) as exc:
@@ -123,7 +121,6 @@ with col_dl:
         use_container_width=True,
     )
 
-# Delete (with confirmation)
 with col_del:
     if confirm_destructive(
         "🗑 Delete",
@@ -135,7 +132,6 @@ with col_del:
     ):
         st.rerun()
 
-# Metadata (JSON only)
 if selected_entry["type"] == "json" and selected_entry.get("metadata"):
     meta = selected_entry["metadata"]
     with st.expander("Conversation metadata", expanded=False):
@@ -147,7 +143,6 @@ if selected_entry["type"] == "json" and selected_entry.get("metadata"):
 
 st.divider()
 
-# Render the chat content
 if selected_entry["type"] == "json":
     for msg in _load_selected_record().messages:
         with st.chat_message(msg.get("role", "assistant")):
