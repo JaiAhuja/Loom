@@ -3,7 +3,7 @@ import json
 from langchain_core.messages import AIMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
-from config.settings import settings
+from config.settings import Settings, settings
 from src.services.agent.state import AgentState
 
 
@@ -70,14 +70,16 @@ def create_agent_node(
     system_prompt: str,
     max_tool_iterations: int | None = None,
     max_tool_calls: int | None = None,
+    settings_obj: Settings | None = None,
 ):
     """Create the agent node with an explicit tool set and prompt."""
+    config = settings_obj or settings
     if max_tool_iterations is None:
-        max_tool_iterations = settings.AGENT_MAX_TOOL_ITERATIONS
+        max_tool_iterations = config.AGENT_MAX_TOOL_ITERATIONS
     if max_tool_iterations < 1:
         raise ValueError("max_tool_iterations must be positive")
     if max_tool_calls is None:
-        max_tool_calls = settings.AGENT_MAX_TOOL_CALLS
+        max_tool_calls = config.AGENT_MAX_TOOL_CALLS
     if max_tool_calls < 1:
         raise ValueError("max_tool_calls must be positive")
     llm_with_tools = llm.bind_tools(tools) if tools else llm
@@ -97,7 +99,7 @@ def create_agent_node(
         if (
             iterations >= max_tool_iterations
             or tool_calls_used >= max_tool_calls
-            or failed_results >= settings.AGENT_MAX_REPEATED_EMPTY_RESULTS
+            or failed_results >= config.AGENT_MAX_REPEATED_EMPTY_RESULTS
         ):
             return {
                 "messages": [
@@ -135,21 +137,26 @@ def create_agent_node(
     return agent_node
 
 
-def should_continue(state: AgentState, max_tool_iterations: int | None = None) -> str:
+def should_continue(
+    state: AgentState,
+    max_tool_iterations: int | None = None,
+    settings_obj: Settings | None = None,
+) -> str:
     """Route to tools only when the model explicitly requested a tool call."""
+    config = settings_obj or settings
     if max_tool_iterations is None:
-        max_tool_iterations = settings.AGENT_MAX_TOOL_ITERATIONS
+        max_tool_iterations = config.AGENT_MAX_TOOL_ITERATIONS
     messages = state.get("messages") or []
     if not messages:
         return "end"
     last_message = messages[-1]
     if state.get("tool_iterations", 0) >= max_tool_iterations:
         return "end"
-    if state.get("tool_calls_used", 0) >= settings.AGENT_MAX_TOOL_CALLS:
+    if state.get("tool_calls_used", 0) >= config.AGENT_MAX_TOOL_CALLS:
         return "end"
 
     empty_results = _consecutive_failed_tool_results(messages)
     empty_results = max(empty_results, state.get("empty_tool_result_count", 0))
-    if empty_results >= settings.AGENT_MAX_REPEATED_EMPTY_RESULTS:
+    if empty_results >= config.AGENT_MAX_REPEATED_EMPTY_RESULTS:
         return "end"
     return "tools" if getattr(last_message, "tool_calls", None) else "end"

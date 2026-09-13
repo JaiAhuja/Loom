@@ -3,7 +3,8 @@ import logging
 from langchain_core.documents import Document
 from langchain_core.tools import StructuredTool
 
-from config.settings import settings
+from config.settings import Settings, settings
+from src.services.common.failures import ToolErrorKind, ToolResultStatus, tool_error, tool_result
 from src.services.ingestion.identity import validate_document_id
 from src.services.retrieval.store import VectorStoreManager
 
@@ -30,17 +31,24 @@ def _format_docs(docs: list[Document]) -> str:
 
 def _search_error(exc: Exception) -> str:
     if "Connection" in type(exc).__name__ or "Timeout" in type(exc).__name__:
-        return (
-            "[TOOL_ERROR kind=dependency_unavailable] Document retrieval is unavailable (connection error)."
+        return tool_error(
+            ToolErrorKind.DEPENDENCY_UNAVAILABLE,
+            "Document retrieval is unavailable (connection error).",
         )
-    return f"[TOOL_ERROR kind=execution_failed] Document search failed: {type(exc).__name__}: {exc}"
+    return tool_error(
+        ToolErrorKind.EXECUTION_FAILED,
+        f"Document search failed: {type(exc).__name__}: {exc}",
+    )
 
 
 def _format_search(docs: list[Document], scope_label: str) -> str:
     return (
         _format_docs(docs)
         if docs
-        else f"[TOOL_RESULT status=empty] No relevant content found in the uploaded documents{scope_label}."
+        else tool_result(
+            ToolResultStatus.EMPTY,
+            f"No relevant content found in the uploaded documents{scope_label}.",
+        )
     )
 
 
@@ -48,6 +56,7 @@ def create_rag_tool(
     collection_name: str,
     store: VectorStoreManager | None,
     document_id: str | None = None,
+    settings_obj: Settings | None = None,
 ):
     """Create a RAG document query tool bound to a specific collection.
 
@@ -74,6 +83,7 @@ def create_rag_tool(
     if document_id is not None:
         validate_document_id(document_id)
 
+    config = settings_obj or settings
     scope_label = ""
     if document_id:
         scope_label = f" (filtered to paper id: {document_id})"
@@ -82,9 +92,9 @@ def create_rag_tool(
         """Return an explicit stale-scope result when the store can verify it."""
         checker = getattr(store, "is_document_indexed", None)
         if document_id and callable(checker) and not checker(collection_name, document_id):
-            return (
-                "[TOOL_RESULT status=stale_document] No indexed document matches "
-                f"document id {document_id!r}."
+            return tool_result(
+                ToolResultStatus.STALE_DOCUMENT,
+                f"No indexed document matches document id {document_id!r}.",
             )
         return None
 
@@ -100,18 +110,16 @@ def create_rag_tool(
         """
         try:
             if not isinstance(query, str) or not query.strip():
-                return "[TOOL_ERROR kind=invalid_input] Document query must be non-empty."
-            if len(query) > settings.RAG_MAX_QUERY_LENGTH:
-                return (
-                    "[TOOL_ERROR kind=invalid_input] Document query exceeds the "
-                    f"{settings.RAG_MAX_QUERY_LENGTH}-character limit."
+                return tool_error(ToolErrorKind.INVALID_INPUT, "Document query must be non-empty.")
+            if len(query) > config.RAG_MAX_QUERY_LENGTH:
+                return tool_error(
+                    ToolErrorKind.INVALID_INPUT,
+                    f"Document query exceeds the {config.RAG_MAX_QUERY_LENGTH}-character limit.",
                 )
             scope_status = _scope_status()
             if scope_status:
                 return scope_status
-            retriever = store.get_retriever(
-                collection_name, top_k=settings.RAG_TOP_K, document_id=document_id
-            )
+            retriever = store.get_retriever(collection_name, top_k=config.RAG_TOP_K, document_id=document_id)
             return _format_search(retriever.invoke(query), scope_label)
         except Exception as e:
             logger.error(
@@ -124,18 +132,16 @@ def create_rag_tool(
         """Async search through uploaded PDF documents for relevant information."""
         try:
             if not isinstance(query, str) or not query.strip():
-                return "[TOOL_ERROR kind=invalid_input] Document query must be non-empty."
-            if len(query) > settings.RAG_MAX_QUERY_LENGTH:
-                return (
-                    "[TOOL_ERROR kind=invalid_input] Document query exceeds the "
-                    f"{settings.RAG_MAX_QUERY_LENGTH}-character limit."
+                return tool_error(ToolErrorKind.INVALID_INPUT, "Document query must be non-empty.")
+            if len(query) > config.RAG_MAX_QUERY_LENGTH:
+                return tool_error(
+                    ToolErrorKind.INVALID_INPUT,
+                    f"Document query exceeds the {config.RAG_MAX_QUERY_LENGTH}-character limit.",
                 )
             scope_status = _scope_status()
             if scope_status:
                 return scope_status
-            retriever = store.get_retriever(
-                collection_name, top_k=settings.RAG_TOP_K, document_id=document_id
-            )
+            retriever = store.get_retriever(collection_name, top_k=config.RAG_TOP_K, document_id=document_id)
             return _format_search(await retriever.ainvoke(query), scope_label)
         except Exception as e:
             logger.error(

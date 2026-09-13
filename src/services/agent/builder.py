@@ -1,6 +1,6 @@
 import logging
 
-from config.settings import settings
+from config.settings import Settings, settings
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
 
@@ -25,6 +25,9 @@ class GraphBuilder:
     which features (RAG, knowledge graph) are enabled.
 
     """
+
+    def __init__(self, settings_obj: Settings | None = None):
+        self.settings = settings_obj or settings
 
     def build(
         self,
@@ -56,12 +59,12 @@ class GraphBuilder:
         Returns:
             Compiled LangGraph StateGraph ready for invocation.
         """
-        settings.validate_runtime(
+        self.settings.validate_runtime(
             require_ollama=True,
             require_embeddings=use_rag,
             require_neo4j=use_graph,
         )
-        llm = get_llm(model=model, temperature=temperature)
+        llm = get_llm(model=model, temperature=temperature, settings_obj=self.settings)
         tools = self._gather_tools(
             use_rag,
             use_graph,
@@ -80,8 +83,9 @@ class GraphBuilder:
                 llm,
                 tools,
                 system_prompt,
-                max_tool_iterations=settings.AGENT_MAX_TOOL_ITERATIONS,
-                max_tool_calls=settings.AGENT_MAX_TOOL_CALLS,
+                max_tool_iterations=self.settings.AGENT_MAX_TOOL_ITERATIONS,
+                max_tool_calls=self.settings.AGENT_MAX_TOOL_CALLS,
+                settings_obj=self.settings,
             ),
         )
 
@@ -89,7 +93,7 @@ class GraphBuilder:
             graph.add_node("tools", ToolNode(tools))
             graph.add_conditional_edges(
                 "agent",
-                should_continue,
+                lambda state: should_continue(state, settings_obj=self.settings),
                 {"tools": "tools", "end": END},
             )
             graph.add_edge("tools", "agent")
@@ -123,6 +127,7 @@ class GraphBuilder:
                     collection_name,
                     store=vector_store,
                     document_id=document_id,
+                    settings_obj=self.settings,
                 )
             )
         elif use_rag:

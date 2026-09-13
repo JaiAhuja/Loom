@@ -5,8 +5,9 @@ import chromadb
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 
-from config.settings import settings
+from config.settings import Settings, settings
 from src.services.ingestion.identity import (
+    MetadataIntegrityError,
     make_chunk_id,
     validate_chunk_id,
     validate_document_id,
@@ -18,6 +19,10 @@ from src.services.llm import get_embeddings
 logger = logging.getLogger(__name__)
 
 
+class RetrievalError(RuntimeError):
+    """Raised when a retrieval operation cannot establish a trustworthy result."""
+
+
 class VectorStoreManager:
     """Manage ChromaDB vector store collections for RAG.
 
@@ -27,8 +32,9 @@ class VectorStoreManager:
 
     """
 
-    def __init__(self, persist_dir: str = None):
-        self.base_persist_dir = persist_dir or settings.CHROMA_PERSIST_DIR
+    def __init__(self, persist_dir: str = None, settings_obj: Settings | None = None):
+        self.settings = settings_obj or settings
+        self.base_persist_dir = persist_dir or self.settings.CHROMA_PERSIST_DIR
         self._embeddings = None
         self._clients: dict[str, chromadb.PersistentClient] = {}
         self._stores: dict[str, Chroma] = {}
@@ -66,7 +72,7 @@ class VectorStoreManager:
     def embeddings(self):
         """Lazy-initialize embeddings to avoid startup overhead."""
         if self._embeddings is None:
-            self._embeddings = get_embeddings()
+            self._embeddings = get_embeddings(settings_obj=self.settings)
         return self._embeddings
 
     def _get_collection_persist_dir(self, collection_name: str) -> str:
@@ -176,7 +182,7 @@ class VectorStoreManager:
             LangChain retriever instance.
         """
         self._validate_collection_name(collection_name)
-        top_k = settings.RAG_TOP_K if top_k is None else top_k
+        top_k = self.settings.RAG_TOP_K if top_k is None else top_k
         if type(top_k) is not int or top_k < 1:
             raise ValueError("top_k must be a positive integer")
         if document_id is not None:
@@ -184,8 +190,8 @@ class VectorStoreManager:
         store = self.get_or_create_store(collection_name)
         search_kwargs: dict = {
             "k": top_k,
-            "fetch_k": settings.RAG_FETCH_K,
-            "lambda_mult": settings.RAG_MMR_LAMBDA,
+            "fetch_k": self.settings.RAG_FETCH_K,
+            "lambda_mult": self.settings.RAG_MMR_LAMBDA,
         }
         if document_id:
             search_kwargs["filter"] = {"document_id": document_id}
@@ -272,6 +278,8 @@ class VectorStoreManager:
                 )
                 entry["chunk_count"] += 1
             return sorted(by_doc.values(), key=lambda x: x["title"].lower())
+        except MetadataIntegrityError:
+            raise
         except Exception:
             logger.debug(
                 "Failed to list papers from collection %s",
@@ -280,7 +288,7 @@ class VectorStoreManager:
             )
             return []
 
-    def get_paper(self, collection_name: str, document_id: str) -> dict | None:
+    def get_paper(self, collection_name: str, document_id: str, *, strict: bool = False) -> dict | None:
         """Return metadata for one paper without scanning the whole collection.
 
         This is used by ingestion's already-indexed path, where loading every
@@ -308,13 +316,17 @@ class VectorStoreManager:
                 "domain": first.get("domain", "Other"),
                 "chunk_count": len(metadatas),
             }
-        except Exception:
+        except MetadataIntegrityError:
+            raise
+        except Exception as exc:
             logger.debug(
                 "Failed to get paper %s from collection %s",
                 document_id,
                 collection_name,
                 exc_info=True,
             )
+            if strict:
+                raise RetrievalError(f"Unable to read metadata for document {document_id!r}") from exc
             return None
 
     def list_collections(self) -> list[str]:
@@ -341,7 +353,7 @@ class VectorStoreManager:
             logger.debug("Failed to list collections", exc_info=True)
             return []
 
-    def is_document_indexed(self, collection_name: str, document_id: str) -> bool:
+    def is_document_indexed(self, collection_name: str, document_id: str, *, strict: bool = False) -> bool:
         """Return True if the collection already contains chunks for this document_id."""
         validate_document_id(document_id)
         try:
@@ -349,13 +361,17 @@ class VectorStoreManager:
             collection = client.get_collection(collection_name)
             results = collection.get(where={"document_id": document_id}, limit=1, include=[])
             return bool(results.get("ids"))
-        except Exception:
+        except Exception as exc:
             logger.debug(
                 "Failed to check indexed document %s in collection %s",
                 document_id,
                 collection_name,
                 exc_info=True,
             )
+            if strict:
+                raise RetrievalError(
+                    f"Unable to determine whether document {document_id!r} is indexed"
+                ) from exc
             return False
 
     def get_collection_count(self, collection_name: str) -> int:
@@ -397,7 +413,7 @@ class VectorStoreManager:
         self._clients.pop(collection_name, None)
         self._stores.pop(collection_name, None)
 
-    def delete_paper(self, collection_name: str, document_id: str) -> int:
+    def delete_paper(self, collection_name: str, document_id: str, *, strict: bool = True) -> int:
         """Delete all chunks belonging to a single paper.
 
         Uses the canonical ``document_id`` metadata filter so that every
@@ -420,11 +436,13 @@ class VectorStoreManager:
             if ids:
                 collection.delete(ids=ids)
             return len(ids)
-        except Exception:
+        except Exception as exc:
             logger.debug(
                 "Failed to delete paper %s from collection %s",
                 document_id,
                 collection_name,
                 exc_info=True,
             )
+            if strict:
+                raise RetrievalError(f"Unable to delete document {document_id!r}") from exc
             return 0

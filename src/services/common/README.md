@@ -8,6 +8,8 @@ does not accumulate here.
 
 - `parse_llm_json(response_text)` — extracts and parses JSON returned by an LLM,
   including common fenced or surrounding-text formats.
+- `failures.py` — shared structured markers for tool input errors, dependency
+  outages, execution failures, empty results, and stale document scopes.
 
 The parser is used by paper profiling, graph writing, and evaluation. Changes
 should preserve its tolerant handling of model output and should be covered by
