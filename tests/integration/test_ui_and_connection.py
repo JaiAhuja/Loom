@@ -12,9 +12,7 @@ pytestmark = pytest.mark.integration
 
 
 def test_chat_error_formatter_classifies_connection_and_model_failures():
-    assert "Connection Error" in format_chat_error(
-        RuntimeError("connection refused"), "model"
-    )
+    assert "Connection Error" in format_chat_error(RuntimeError("connection refused"), "model")
     assert "Model Error" in format_chat_error(RuntimeError("model not found"), "model")
     assert "**Error:**" in format_chat_error(RuntimeError("other"), "model")
 

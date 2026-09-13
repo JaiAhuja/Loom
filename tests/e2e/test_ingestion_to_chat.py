@@ -20,9 +20,7 @@ class InMemoryRetriever:
     documents: list[Document]
 
     def invoke(self, query: str):
-        return [
-            doc for doc in self.documents if query.lower() in doc.page_content.lower()
-        ]
+        return [doc for doc in self.documents if query.lower() in doc.page_content.lower()]
 
     async def ainvoke(self, query: str):
         return self.invoke(query)
@@ -34,25 +32,16 @@ class InMemoryVectorStore:
 
     def is_document_indexed(self, collection_name: str, document_id: str) -> bool:
         return any(
-            doc.metadata.get("document_id") == document_id
-            for doc in self.documents.get(collection_name, [])
+            doc.metadata.get("document_id") == document_id for doc in self.documents.get(collection_name, [])
         )
 
-    def add_documents(
-        self, documents: list[Document], collection_name: str = "default"
-    ) -> None:
+    def add_documents(self, documents: list[Document], collection_name: str = "default") -> None:
         self.documents.setdefault(collection_name, []).extend(documents)
 
-    def get_retriever(
-        self, collection_name: str, top_k: int, document_id: str | None = None
-    ):
+    def get_retriever(self, collection_name: str, top_k: int, document_id: str | None = None):
         documents = self.documents.get(collection_name, [])
         if document_id:
-            documents = [
-                doc
-                for doc in documents
-                if doc.metadata.get("document_id") == document_id
-            ]
+            documents = [doc for doc in documents if doc.metadata.get("document_id") == document_id]
         return InMemoryRetriever(documents[:top_k])
 
 

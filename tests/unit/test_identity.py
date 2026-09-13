@@ -49,9 +49,7 @@ def test_compute_file_hash_missing_file_raises_contextual_error(tmp_path):
 
 
 def test_make_document_id():
-    assert (
-        make_document_id("Self-Supervised Learning.pdf") == "Self-Supervised Learning"
-    )
+    assert make_document_id("Self-Supervised Learning.pdf") == "Self-Supervised Learning"
 
 
 def test_generate_ingest_id_unique():
