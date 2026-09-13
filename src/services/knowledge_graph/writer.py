@@ -40,6 +40,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+class KnowledgeGraphError(RuntimeError):
+    """Raised when a graph operation cannot establish a trustworthy result."""
+
+
 _FINDING_LINKS_PROMPT = ChatPromptTemplate.from_messages(
     [
         (
@@ -131,10 +135,12 @@ class KnowledgeGraphWriter:
     """
 
     def __init__(self, conn: Neo4jConnection) -> None:
+        if conn is None or not callable(getattr(conn, "execute_read", None)):
+            raise TypeError("conn must be an explicitly owned Neo4j connection")
         self._conn = conn
         self._schema_ready = False
 
-    def is_paper_in_kg(self, document_id: str) -> bool:
+    def is_paper_in_kg(self, document_id: str, *, strict: bool = False) -> bool:
         """Return True if a Paper node for this document_id already exists in Neo4j."""
         validate_document_id(document_id)
         try:
@@ -143,10 +149,14 @@ class KnowledgeGraphWriter:
                 {"id": document_id},
             )
             return bool(rows and rows[0]["n"] > 0)
-        except Exception:
+        except Exception as exc:
+            if strict:
+                raise KnowledgeGraphError(
+                    f"Unable to determine whether document {document_id!r} is in the graph"
+                ) from exc
             return False
 
-    def has_paper_details(self, document_id: str) -> bool:
+    def has_paper_details(self, document_id: str, *, strict: bool = False) -> bool:
         """Return True when a paper has the typed detail child nodes."""
         validate_document_id(document_id)
         try:
@@ -156,7 +166,11 @@ class KnowledgeGraphWriter:
                 {"id": document_id},
             )
             return bool(rows and rows[0]["n"] > 0)
-        except Exception:
+        except Exception as exc:
+            if strict:
+                raise KnowledgeGraphError(
+                    f"Unable to determine whether document {document_id!r} has graph details"
+                ) from exc
             return False
 
     def write_paper_profile(self, profile: "PaperProfile", document_id: str) -> None:
