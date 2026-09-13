@@ -6,6 +6,7 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from config.settings import Settings, settings
 from src.services.agent.state import AgentState
 
+MAX_SYSTEM_PROMPT_CHARS = 1800
 
 SYSTEM_PROMPT_BASE = """You are Loom, a careful tutor for data engineering, data science, and AI.
 Answer the user's actual question first. Match the depth and format to the task: use
@@ -37,6 +38,8 @@ def build_system_prompt(use_rag: bool = False, use_graph: bool = False) -> str:
         prompt += "\n" + TOOL_PROMPT_GRAPH
     if not use_rag and not use_graph:
         prompt += "\nOffline mode is active; answer from model knowledge only."
+    if len(prompt) > MAX_SYSTEM_PROMPT_CHARS:
+        raise ValueError(f"System prompt exceeds the {MAX_SYSTEM_PROMPT_CHARS}-character discipline limit")
     return prompt
 
 

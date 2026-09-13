@@ -215,9 +215,9 @@ class IngestionService:
 
                 kg_needs_write = False
                 if self._kg_writer is not None:
-                    in_kg = self._kg_writer.is_paper_in_kg(identity.document_id)
+                    in_kg = self._kg_writer.is_paper_in_kg(identity.document_id, strict=True)
                     kg_needs_write = not in_kg or (
-                        in_kg and not self._kg_writer.has_paper_details(identity.document_id)
+                        in_kg and not self._kg_writer.has_paper_details(identity.document_id, strict=True)
                     )
 
                 if self._kg_writer is not None and kg_needs_write:
@@ -232,7 +232,7 @@ class IngestionService:
                     if on_progress:
                         on_progress(step_base + _SUB_STEPS, total_steps, skip_msg)
                     if self._kg_writer is not None:
-                        fr.kg_indexed = self._kg_writer.is_paper_in_kg(identity.document_id)
+                        fr.kg_indexed = self._kg_writer.is_paper_in_kg(identity.document_id, strict=True)
 
                 result.file_results.append(fr)
                 continue
