@@ -31,7 +31,7 @@ flowchart TB
     %% CONFIG
     %% ─────────────────────────────────────────
     subgraph CFG["⚙️ Configuration"]
-        SETTINGS["<b>config/settings.py</b><br/>Settings (Pydantic)<br/>• Ollama params (incl. OLLAMA_NUM_CTX)<br/>• Neo4j creds<br/>• ChromaDB path<br/>• RAG tuning knobs<br/>• LangSmith config"]
+        SETTINGS["<b>config/settings.py</b><br/>Settings (Pydantic)<br/>• Feature-scoped runtime validation<br/>• Strict unknown-key rejection<br/>• Ollama, Neo4j &amp; Chroma config<br/>• RAG + agent safety limits<br/>• No APP_ENV requirement"]
     end
 
     %% ─────────────────────────────────────────
@@ -39,7 +39,7 @@ flowchart TB
     %% ─────────────────────────────────────────
     subgraph INGEST["📥 Ingestion Pipeline"]
         direction TB
-        IDENTITY["<b>ingestion/identity.py</b><br/>DocumentIdentity<br/>• Filename-based doc_id<br/>• MD5 hash for storage path<br/>• UUID ingest_id per session"]
+        IDENTITY["<b>ingestion/identity.py</b><br/>DocumentIdentity + metadata contract<br/>• Canonical document_id<br/>• Deterministic chunk_id<br/>• MetadataIntegrityError<br/>• MD5 storage path + ingest_id"]
         INGSVC["<b>ingestion/service.py</b><br/>IngestionService<br/>• Orchestrates full pipeline<br/>• RAG skip by document_id<br/>• KG catch-up for missing details<br/>• Profile sidecar save/load<br/>• Progress callbacks"]
     end
 
@@ -48,15 +48,15 @@ flowchart TB
     %% ─────────────────────────────────────────
     subgraph RAG["📄 RAG Pipeline"]
         direction TB
-        PROCESSOR["<b>rag/processor.py</b><br/>DocumentProcessor<br/>• PDF → Markdown (Docling)<br/>• Hybrid chunking<br/>• PaperProfile extraction<br/>• Summary chunk creation<br/>• Deterministic chunk IDs"]
-        STORE["<b>rag/store.py</b><br/>VectorStoreManager<br/>• Upsert with dedup IDs<br/>• Filtered retrieval<br/>• Collection management<br/>• Paper listing"]
+        PROCESSOR["<b>retrieval/processor.py</b><br/>DocumentProcessor<br/>• PDF → Markdown (Docling)<br/>• Hybrid chunking<br/>• PaperProfile extraction<br/>• Summary chunk creation<br/>• Deterministic chunk IDs"]
+        STORE["<b>retrieval/store.py</b><br/>VectorStoreManager<br/>• Upsert with canonical IDs<br/>• Validate metadata on write/read<br/>• Filtered retrieval + stale checks<br/>• Explicit legacy migration<br/>• Per-manager resource ownership"]
     end
 
     %% ─────────────────────────────────────────
     %% LLM PROVIDER
     %% ─────────────────────────────────────────
     subgraph LLM["🧠 LLM Provider"]
-        PROVIDER["<b>llm/provider.py</b><br/>get_llm() → ChatOllama<br/>get_embeddings() → OllamaEmbeddings<br/>• Cached by model+temp"]
+        PROVIDER["<b>llm/provider.py</b><br/>get_llm() → ChatOllama<br/>get_embeddings() → OllamaEmbeddings<br/>• No module-level caches<br/>• Caller owns client reuse"]
         PAPERPROFILE["<b>llm/paper_profile.py</b><br/>PaperProfile + extract_paper_profile()<br/>• Single ChatPromptTemplate call<br/>• Extracts summary, details,<br/>&nbsp;&nbsp;concepts, methods, findings"]
     end
 
@@ -77,9 +77,9 @@ flowchart TB
     %% ─────────────────────────────────────────
     subgraph AGENT["🤖 LangGraph Agent"]
         direction TB
-        STATE["<b>graph/state.py</b><br/>AgentState<br/>• messages list<br/>• add_messages reducer"]
-        NODES["<b>graph/nodes.py</b><br/>Agent node &amp; routing<br/>• build_system_prompt()<br/>• create_agent_node()<br/>• should_continue()<br/>• Conditional tool prompts"]
-        BUILDER["<b>graph/builder.py</b><br/>GraphBuilder<br/>• Dynamic tool assembly<br/>• ReAct agent loop<br/>• Feature-flag gating<br/>• Compiles StateGraph"]
+        STATE["<b>agent/state.py</b><br/>AgentState<br/>• messages + add_messages reducer<br/>• tool iterations/call count<br/>• call signatures + failure streak"]
+        NODES["<b>agent/nodes.py</b><br/>Agent node &amp; routing<br/>• Concise evidence-driven prompt<br/>• Iteration + call budgets<br/>• Repeated-call protection<br/>• Empty/stale/error loop stop"]
+        BUILDER["<b>agent/builder.py</b><br/>GraphBuilder<br/>• Dynamic tool assembly<br/>• ReAct agent loop<br/>• Feature-flag gating<br/>• Compiles StateGraph"]
     end
 
     %% ─────────────────────────────────────────
@@ -87,8 +87,8 @@ flowchart TB
     %% ─────────────────────────────────────────
     subgraph TOOLS["🔧 Agent Tools"]
         direction LR
-        RAGTOOL["<b>tools/rag_tool.py</b><br/>query_documents<br/>• Collection-bound retriever<br/>• Optional paper filter<br/>• Top-K chunk formatting"]
-        SAFEGRAPH["<b>tools/safe_graph_tool.py</b><br/>query_knowledge_graph<br/>• Intent-based dispatch<br/>• JSON param parsing<br/>• Human-readable formatting"]
+        RAGTOOL["<b>tools/rag_tool.py</b><br/>query_documents<br/>• Explicit store + collection binding<br/>• Invalid/stale/empty status results<br/>• Dependency vs execution errors<br/>• Top-K source-aware formatting"]
+        SAFEGRAPH["<b>tools/safe_graph_tool.py</b><br/>query_knowledge_graph<br/>• Explicit connection ownership<br/>• Named intents only<br/>• Strict JSON object parsing<br/>• Structured failure statuses"]
     end
 
     %% ─────────────────────────────────────────
@@ -98,7 +98,7 @@ flowchart TB
         CHATSTORE["<b>chat/store.py</b><br/>ChatStore<br/>• Save/load/search JSON chats<br/>• Resume conversations<br/>• Topic extraction"]
         EVALUATION["<b>evaluation/judge.py</b><br/>RAGJudge<br/>• LLM-as-a-Judge scoring<br/>• Context relevance (0-5)<br/>• Faithfulness (0-5)<br/>• Answer relevance (0-5)"]
         JSONPARSER["<b>utils/json_parser.py</b><br/>parse_llm_json()<br/>• Extract JSON from LLM output<br/>• Handles code-block wrapping"]
-        UIMOD["<b>ui/bootstrap.py / chrome.py</b><br/>• Cached status checks (Ollama, Neo4j)<br/>• Shared HTML snippets<br/>• Destructive-action confirm"]
+        UIMOD["<b>ui/bootstrap.py / chrome.py</b><br/>App-owned lifecycle boundary<br/>• Streamlit resource factories<br/>• Cached dependency status checks<br/>• Clear UI failure messages<br/>• Shared HTML + confirmation UI"]
     end
 
     %% ═══════════════════════════════════════
@@ -111,6 +111,8 @@ flowchart TB
     INGSVC -->|"process PDF"| PROCESSOR
     INGSVC -->|"store chunks"| STORE
     INGSVC -->|"write KG + link relationships"| WRITER
+    IDENTITY -->|"validate canonical metadata"| STORE
+    IDENTITY -->|"validate canonical document_id"| WRITER
     WRITER --> CONN
 
     %% UI → Agent
@@ -122,6 +124,7 @@ flowchart TB
     %% Agent ↔ Tools
     BUILDER -->|"assemble tools"| RAGTOOL
     BUILDER -->|"assemble tools"| SAFEGRAPH
+    CHATPAGE -->|"passes owned resources"| BUILDER
 
     %% Tools → backends
     RAGTOOL -->|"retrieve chunks"| STORE
@@ -140,16 +143,21 @@ flowchart TB
     %% KG internals
     SCHEMA -->|"create constraints"| CONN
 
+    %% App-owned resource lifecycle
+    UIMOD -->|"owns cached app resource"| CONN
+    UIMOD -->|"owns cached app resource"| STORE
+    UIMOD -->|"owns cached app resource"| PROCESSOR
+
     %% External service connections
     PROVIDER -->|"inference + embeddings"| OLLAMA
     CONN -->|"Bolt protocol"| NEO4J
     STORE -->|"persist vectors"| CHROMADB
 
     %% Config
-    SETTINGS -.->|"settings singleton"| APP
-    SETTINGS -.->|"settings singleton"| PROVIDER
-    SETTINGS -.->|"settings singleton"| STORE
-    SETTINGS -.->|"settings singleton"| CONN
+    SETTINGS -.->|"validated configuration"| APP
+    SETTINGS -.->|"validated configuration"| PROVIDER
+    SETTINGS -.->|"validated configuration"| STORE
+    SETTINGS -.->|"validated configuration"| CONN
 
     %% Utils
     APP -->|"save/load chat history"| CHATSTORE
@@ -174,8 +182,6 @@ flowchart TB
     classDef agentNode fill:#c62828,stroke:#b71c1c,color:#fff
     classDef toolNode fill:#f9a825,stroke:#f57f17,color:#000
     classDef utilNode fill:#546e7a,stroke:#37474f,color:#fff
-    classDef llmNode fill:#7b1fa2,stroke:#4a148c,color:#fff
-
     class OLLAMA,NEO4J,CHROMADB,LANGSMITH extService
     class APP,KGPAGE uiNode
     class SETTINGS cfgNode
