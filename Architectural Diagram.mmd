@@ -18,8 +18,13 @@ flowchart TB
     %% ─────────────────────────────────────────
     subgraph UI["🖥️ Streamlit UI Layer"]
         direction LR
-        APP["<b>app.py</b><br/>Chat page<br/>• Sidebar toggles<br/>• PDF upload<br/>• Agent invocation<br/>• Auto-save responses"]
+        APP["<b>app.py</b><br/>Streamlit multipage router"]
+        CHATPAGE["<b>pages/1_Chat.py</b><br/>Chat page<br/>• Sidebar toggles<br/>• PDF upload<br/>• Agent invocation<br/>• Auto-save responses"]
         KGPAGE["<b>pages/2_Knowledge_Graph.py</b><br/>KG Explorer page<br/>• Graph View (pyvis)<br/>• Paper/detail inspector<br/>• Concept Explorer<br/>• Cross-Paper Relations"]
+        HISTORYPAGE["<b>pages/3_Chat_History.py</b><br/>Saved chat viewer"]
+        APP --> CHATPAGE
+        APP --> KGPAGE
+        APP --> HISTORYPAGE
     end
 
     %% ─────────────────────────────────────────
