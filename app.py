@@ -190,8 +190,7 @@ with st.sidebar:
         "use_graph_persistent",
         key="use_graph_toggle",
         disabled=not neo4j_connected,
-        help="Query the Neo4j knowledge graph for cross-paper relationships. "
-        "Requires Neo4j to be running.",
+        help="Query the Neo4j knowledge graph for cross-paper relationships. Requires Neo4j to be running.",
     )
 
     if use_graph and neo4j_connected:
@@ -255,9 +254,7 @@ with st.sidebar:
             if papers_in_collection:
                 st.markdown("---")
 
-                doc_id_options: list[str | None] = [None] + [
-                    p["document_id"] for p in papers_in_collection
-                ]
+                doc_id_options: list[str | None] = [None] + [p["document_id"] for p in papers_in_collection]
 
                 def _paper_label(doc_id):
                     if doc_id is None:
@@ -279,9 +276,7 @@ with st.sidebar:
                 if selected_doc_id is not None:
                     document_id_filter = selected_doc_id
                     selected_meta = next(
-                        p
-                        for p in papers_in_collection
-                        if p["document_id"] == selected_doc_id
+                        p for p in papers_in_collection if p["document_id"] == selected_doc_id
                     )
                     paper_filter = selected_meta["title"]
                     st.caption(
@@ -293,12 +288,8 @@ with st.sidebar:
                     for p in papers_in_collection:
                         d = p["domain"]
                         domains[d] = domains.get(d, 0) + 1
-                    domain_summary = ", ".join(
-                        f"{d} ({c})" for d, c in sorted(domains.items())
-                    )
-                    st.caption(
-                        f"🔍 Searching across {len(papers_in_collection)} paper(s) · {domain_summary}"
-                    )
+                    domain_summary = ", ".join(f"{d} ({c})" for d, c in sorted(domains.items()))
+                    st.caption(f"🔍 Searching across {len(papers_in_collection)} paper(s) · {domain_summary}")
 
         st.markdown("---")
         uploaded_files = st.file_uploader(
@@ -308,16 +299,12 @@ with st.sidebar:
             label_visibility="collapsed",
         )
 
-        if uploaded_files and st.button(
-            "🔄 Process & Index Documents", use_container_width=True
-        ):
+        if uploaded_files and st.button("🔄 Process & Index Documents", use_container_width=True):
             target_collection = collection_name or "default"
 
             ingest_id = generate_ingest_id()
             pdf_dir = os.path.join(".", "data", "pdfs")
-            file_paths = [
-                _save_uploaded_pdf(file, ingest_id, pdf_dir) for file in uploaded_files
-            ]
+            file_paths = [_save_uploaded_pdf(file, ingest_id, pdf_dir) for file in uploaded_files]
 
             progress = st.progress(0, text="Initializing...")
 
@@ -351,8 +338,7 @@ with st.sidebar:
                     summary_label = " + summary" if fr.has_summary else ""
                     kg_label = " + KG" if fr.kg_indexed else ""
                     st.success(
-                        f"✅ RAG{kg_label}: **{fr.paper_title}** → "
-                        f"{fr.content_chunks} chunks{summary_label}"
+                        f"✅ RAG{kg_label}: **{fr.paper_title}** → {fr.content_chunks} chunks{summary_label}"
                     )
                 else:
                     st.error(f"❌ RAG: {fr.file_name}: {fr.error}")
@@ -365,7 +351,8 @@ with st.sidebar:
 
             if confirm_destructive(
                 "🗑️ Delete Collection",
-                f"Delete collection **{collection_name}** and all its document chunks? This cannot be undone. (The Knowledge Graph will remain unchanged.)",
+                f"Delete collection **{collection_name}** and all its document chunks? "
+                "This cannot be undone. (The Knowledge Graph will remain unchanged.)",
                 key=f"delete_collection_{collection_name}",
                 on_confirm=lambda cn=collection_name: (
                     store.delete_collection(cn),
@@ -424,9 +411,7 @@ with st.sidebar:
             try:
                 resumed_filename = st.session_state.get("_resumed_from")
                 if resumed_filename:
-                    saved_path = chat_store.update(
-                        resumed_filename, st.session_state.messages, metadata
-                    )
+                    saved_path = chat_store.update(resumed_filename, st.session_state.messages, metadata)
                     st.success(f"Updated chat: {os.path.basename(saved_path)}")
                 else:
                     saved_path = chat_store.save(st.session_state.messages, metadata)
@@ -458,9 +443,7 @@ if user_input := st.chat_input("Ask about any concept in DE, DS, or AI..."):
         st.markdown(user_input)
     st.session_state.messages.append({"role": "user", "content": user_input})
 
-    lang_messages = [
-        m for msg in st.session_state.messages if (m := _to_lang_message(msg))
-    ]
+    lang_messages = [m for msg in st.session_state.messages if (m := _to_lang_message(msg))]
 
     with st.chat_message("assistant"):
         result = {}
@@ -473,9 +456,7 @@ if user_input := st.chat_input("Ask about any concept in DE, DS, or AI..."):
                     model=model,
                     temperature=temperature,
                     document_id=document_id_filter,
-                    _neo4j_conn=get_neo4j_connection()
-                    if (use_graph and neo4j_connected)
-                    else None,
+                    _neo4j_conn=get_neo4j_connection() if (use_graph and neo4j_connected) else None,
                     _vector_store=get_vector_store() if use_rag else None,
                 )
 
@@ -491,8 +472,7 @@ if user_input := st.chat_input("Ask about any concept in DE, DS, or AI..."):
             retrieved_chunks = [
                 msg.content
                 for msg in result.get("messages", [])
-                if isinstance(msg, ToolMessage)
-                and getattr(msg, "name", "") == "query_documents"
+                if isinstance(msg, ToolMessage) and getattr(msg, "name", "") == "query_documents"
             ]
             if retrieved_chunks:
                 with st.spinner("Evaluating response quality..."):

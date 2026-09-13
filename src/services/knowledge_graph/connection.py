@@ -71,9 +71,7 @@ class Neo4jConnection:
         with lock:
             driver = getattr(self, attr)
             if driver is None:
-                driver = factory(
-                    self.uri, auth=(self.username, self.password), **kwargs
-                )
+                driver = factory(self.uri, auth=(self.username, self.password), **kwargs)
                 setattr(self, attr, driver)
             return driver
 
@@ -102,9 +100,7 @@ class Neo4jConnection:
             List of result records as dicts.
         """
         with self.driver.session(database=self.database) as session:
-            return session.execute_read(
-                lambda tx: [r.data() for r in tx.run(query, parameters or {})]
-            )
+            return session.execute_read(lambda tx: [r.data() for r in tx.run(query, parameters or {})])
 
     def execute_write(self, query: str, parameters: dict = None) -> list[dict]:
         """Execute a write Cypher query using a managed write transaction.
@@ -119,9 +115,7 @@ class Neo4jConnection:
             List of result records as dicts.
         """
         with self.driver.session(database=self.database) as session:
-            return session.execute_write(
-                lambda tx: [r.data() for r in tx.run(query, parameters or {})]
-            )
+            return session.execute_write(lambda tx: [r.data() for r in tx.run(query, parameters or {})])
 
     def execute_write_tx(self, queries: list[tuple[str, dict]]) -> None:
         """Execute multiple write queries in a single transaction.
@@ -145,9 +139,7 @@ class Neo4jConnection:
         """Async version of execute_write."""
         return await self._aexecute("write", query, parameters)
 
-    async def _aexecute(
-        self, mode: str, query: str, parameters: dict | None
-    ) -> list[dict]:
+    async def _aexecute(self, mode: str, query: str, parameters: dict | None) -> list[dict]:
         async with self.async_driver.session(database=self.database) as session:
 
             async def _work(tx):
@@ -170,9 +162,7 @@ class Neo4jConnection:
                         result = await tx.run(q, params or {})
                         await result.consume()
                     except Exception as e:
-                        logger.error(
-                            f"Write transaction failed at query {i}: {e}", exc_info=True
-                        )
+                        logger.error(f"Write transaction failed at query {i}: {e}", exc_info=True)
                         raise
 
             await session.execute_write(_work)

@@ -152,6 +152,29 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
+### 4a. Install Development Hooks
+
+Create the project-local `Loom` virtual environment and install the development tools:
+
+```bash
+python -m venv Loom
+source Loom/bin/activate  # macOS/Linux
+Loom/bin/python -m pip install -r requirements-dev.txt
+Loom/bin/pre-commit install
+```
+
+The hooks run automatically before each commit. They check whitespace, YAML and JSON syntax, merge
+conflict markers, private keys, and direct commits to `main`. Ruff also fixes supported issues and
+formats Python files. A hook run returns non-zero when it changes files, so review the changes and
+run the commit again.
+
+Ruff enforces a maximum Python line length of 110 characters. To run every hook against the full
+repository:
+
+```bash
+Loom/bin/pre-commit run --all-files
+```
+
 > **Note:** The `docling` package is large (~2GB) due to ML models. If you don't plan to use RAG immediately, you can skip it and install later:
 > ```bash
 > pip install -r requirements.txt --exclude docling

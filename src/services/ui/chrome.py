@@ -40,14 +40,10 @@ def render_status_bar(
     if collection_name:
         chips.append(f'<span class="status-chip">📄 {escape(collection_name)}</span>')
         if paper_filter:
-            chips.append(
-                f'<span class="status-chip">📑 {escape(paper_filter[:30])}</span>'
-            )
+            chips.append(f'<span class="status-chip">📑 {escape(paper_filter[:30])}</span>')
     if use_graph:
         chips.append('<span class="status-chip">🔗 Graph</span>')
-    st.markdown(
-        f'<div class="status-bar">{"".join(chips)}</div>', unsafe_allow_html=True
-    )
+    st.markdown(f'<div class="status-bar">{"".join(chips)}</div>', unsafe_allow_html=True)
 
 
 def render_hero() -> None:
@@ -63,13 +59,16 @@ def render_hero() -> None:
         '<div class="feature-grid">'
         '  <div class="feature-card"><div class="card-icon">🧠</div>'
         '    <div class="card-title">Deep Explanations</div>'
-        '    <div class="card-desc">Concept breakdowns with code examples, analogies & best practices</div></div>'
+        '    <div class="card-desc">Concept breakdowns with code examples, analogies & '
+        "best practices</div></div>"
         '  <div class="feature-card"><div class="card-icon">📄</div>'
         '    <div class="card-title">RAG over PDFs</div>'
-        '    <div class="card-desc">Upload papers & notes — ask questions grounded in your own material</div></div>'
+        '    <div class="card-desc">Upload papers & notes — ask questions grounded in your '
+        "own material</div></div>"
         '  <div class="feature-card"><div class="card-icon">🔗</div>'
         '    <div class="card-title">Knowledge Graph</div>'
-        '    <div class="card-desc">Discover cross-paper relationships, shared concepts & contradictions</div></div>'
+        '    <div class="card-desc">Discover cross-paper relationships, shared concepts & '
+        "contradictions</div></div>"
         "</div>",
         unsafe_allow_html=True,
     )
@@ -97,10 +96,7 @@ def format_chat_error(exc: Exception, model: str) -> str:
             f"`{model}` is pulled (`ollama pull {model}`)."
         )
     if "not found" in low:
-        return (
-            f"**Model Error:** Model `{model}` not found.\n\n"
-            f"Pull it with: `ollama pull {model}`"
-        )
+        return f"**Model Error:** Model `{model}` not found.\n\nPull it with: `ollama pull {model}`"
     return (
         f"**Error:** {msg}\n\n"
         f"Check that Ollama is running and the model `{model}` supports "
@@ -108,6 +104,4 @@ def format_chat_error(exc: Exception, model: str) -> str:
     )
 
 
-EMPTY_RESPONSE_MARKDOWN = (
-    "*(The model returned an empty response. Try rephrasing your question.)*"
-)
+EMPTY_RESPONSE_MARKDOWN = "*(The model returned an empty response. Try rephrasing your question.)*"

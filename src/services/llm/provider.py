@@ -6,13 +6,9 @@ _llm_cache: dict[tuple, ChatOllama] = {}
 _embeddings_cache: dict[str, OllamaEmbeddings] = {}
 
 
-def get_llm(
-    model: str = None, temperature: float = None, require_json: bool = False
-) -> ChatOllama:
+def get_llm(model: str = None, temperature: float = None, require_json: bool = False) -> ChatOllama:
     resolved_model = model or settings.OLLAMA_MODEL
-    resolved_temp = (
-        temperature if temperature is not None else settings.OLLAMA_TEMPERATURE
-    )
+    resolved_temp = temperature if temperature is not None else settings.OLLAMA_TEMPERATURE
 
     key = (resolved_model, resolved_temp, require_json)
 

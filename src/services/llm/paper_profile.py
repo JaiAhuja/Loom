@@ -144,9 +144,7 @@ def _safe_file_name(file_name: str) -> str:
 def _response_text(response: Any) -> str:
     """Extract text from a LangChain response object."""
     content = getattr(response, "content", response)
-    return (
-        "" if content is None else content if isinstance(content, str) else str(content)
-    )
+    return "" if content is None else content if isinstance(content, str) else str(content)
 
 
 def _prompt_inputs(markdown_text: str, file_name: str, budget: int) -> dict:
@@ -189,17 +187,21 @@ _PROMPT_TEMPLATE = ChatPromptTemplate.from_messages(
         (
             "system",
             """### ROLE
-You are a Senior Research Analyst. Your goal is to deconstruct academic papers into high-fidelity knowledge graphs.
+You are a Senior Research Analyst. Your goal is to deconstruct academic papers into
+high-fidelity knowledge graphs.
 
 ### EXTRACTION RULES
 1. **CONCEPTS (5-15)**: Focus on technical terms, theories, or novel entities. Use snake_case or lowercase.
-2. **METHODS (1-5)**: Identify the 'how'. (e.g., "Randomized Controlled Trial", "Transformer Architecture", "Qualitative Interviews").
-3. **FINDINGS (2-8)**: Each finding must include a 'claim' and the 'evidence_type'. Prefer findings that include statistical results or specific outcomes.
+2. **METHODS (1-5)**: Identify the 'how'. (e.g., "Randomized Controlled Trial",
+   "Transformer Architecture", "Qualitative Interviews").
+3. **FINDINGS (2-8)**: Each finding must include a 'claim' and the 'evidence_type'. Prefer
+   findings that include statistical results or specific outcomes.
 4. **DETAILS**:
    - contributions: what the paper adds.
    - stands_for: the central thesis, position, or model the paper represents.
    - builds_on: prior work, assumptions, methods, datasets, theories, or baselines it explicitly builds on.
-   - does_not_support: claims, methods, generalisations, or interpretations the paper explicitly rejects, weakens, cautions against, or fails to establish.
+   - does_not_support: claims, methods, generalisations, or interpretations the paper explicitly
+     rejects, weakens, cautions against, or fails to establish.
    - limitations: boundaries, threats to validity, missing evidence, or open questions.
    Each detail must be a concise sentence with optional evidence text.
 5. **DOMAIN**: Strictly use one from: {domains}.
@@ -221,10 +223,13 @@ Content:
 ---
 
 ### TASK
-Analyze the text above and populate the following JSON schema. Ensure the 'summary' is a comprehensive 15-20 sentence narrative of the paper's lifecycle, including motivation, method, evidence, contributions, boundaries, and implications.
+Analyze the text above and populate the following JSON schema. Ensure the 'summary' is a
+comprehensive 15-20 sentence narrative of the paper's lifecycle, including motivation, method,
+evidence, contributions, boundaries, and implications.
 
 {{
-    "internal_analysis": "Briefly list the 3 most important keywords from the paper here before filling the rest",
+    "internal_analysis": "Briefly list the 3 most important keywords from the paper here before "
+    "filling the rest",
     "title": "Full academic title",
     "authors": [],
     "year": null,
@@ -281,9 +286,7 @@ def extract_paper_profile(
     """
     chain = _PROMPT_TEMPLATE | llm
     try:
-        return _profile_from_response(
-            chain.invoke(_prompt_inputs(markdown_text, file_name, budget))
-        )
+        return _profile_from_response(chain.invoke(_prompt_inputs(markdown_text, file_name, budget)))
     except Exception as exc:
         logger.warning("Paper profile extraction failed: %s", exc, exc_info=True)
         return None
@@ -301,9 +304,7 @@ async def aextract_paper_profile(
     """
     chain = _PROMPT_TEMPLATE | llm
     try:
-        return _profile_from_response(
-            await chain.ainvoke(_prompt_inputs(markdown_text, file_name, budget))
-        )
+        return _profile_from_response(await chain.ainvoke(_prompt_inputs(markdown_text, file_name, budget)))
     except Exception as exc:
         logger.warning("Async paper profile extraction failed: %s", exc, exc_info=True)
         return None

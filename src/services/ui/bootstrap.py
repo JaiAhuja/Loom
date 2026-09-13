@@ -40,18 +40,11 @@ def check_neo4j_status() -> tuple[bool, str]:
         return True, ""
     except Exception as exc:
         error_msg = str(exc).lower()
-        if (
-            "database unavailable" in error_msg
-            or "database `neo4j` is currently unavailable" in error_msg
-        ):
+        if "database unavailable" in error_msg or "database `neo4j` is currently unavailable" in error_msg:
             return False, (
-                "❌ Neo4j database instance is not running. "
-                "Open Neo4j Desktop → Start the database instance."
+                "❌ Neo4j database instance is not running. Open Neo4j Desktop → Start the database instance."
             )
-        elif (
-            "connection refused" in error_msg
-            or "unable to retrieve routing" in error_msg
-        ):
+        elif "connection refused" in error_msg or "unable to retrieve routing" in error_msg:
             return False, (
                 "❌ Cannot connect to Neo4j server. "
                 "Ensure Neo4j Desktop is running and the database is started."

@@ -36,17 +36,12 @@ class GraphQueryService:
     @staticmethod
     def _resolve(intent: str, params: dict[str, Any] | None):
         if intent not in _INTENTS:
-            raise ValueError(
-                f"Unknown intent {intent!r}. "
-                f"Supported: {', '.join(sorted(ALL_INTENTS))}"
-            )
+            raise ValueError(f"Unknown intent {intent!r}. Supported: {', '.join(sorted(ALL_INTENTS))}")
         params = dict(params) if params else {}
         required, method, fixed_args = _INTENTS[intent]
         missing = [p for p in required if p not in params]
         if missing:
-            raise ValueError(
-                f"Intent {intent!r} requires {required}; missing: {missing}"
-            )
+            raise ValueError(f"Intent {intent!r} requires {required}; missing: {missing}")
         return method, (*fixed_args, *(params[name] for name in required)), params
 
     def execute(self, intent: str, params: dict[str, Any] | None = None) -> dict:

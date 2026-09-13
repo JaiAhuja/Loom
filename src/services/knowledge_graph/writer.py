@@ -43,7 +43,8 @@ _FINDING_LINKS_PROMPT = ChatPromptTemplate.from_messages(
     [
         (
             "system",
-            """You are a scientific knowledge graph assistant specialising in cross-paper relationship detection.
+            """You are a scientific knowledge graph assistant specialising in cross-paper
+relationship detection.
 
 Your task is to compare two sets of research findings and identify semantic relationships between them.
 
@@ -84,9 +85,12 @@ _CONCEPT_LINKS_PROMPT = ChatPromptTemplate.from_messages(
 Your task is to compare two sets of research concepts and identify semantic relationships between them.
 
 RELATIONSHIP TYPES:
-- RELATED_TO: The concepts are related but neither is prerequisite to or subsumed by the other (e.g., "attention" RELATED_TO "optimization").
-- SUBTOPIC_OF: The new concept is a specific instance or subtype of an existing concept (e.g., "self-attention" SUBTOPIC_OF "attention").
-- EXTENDS: The new concept builds on or extends an existing concept with additional nuance or technique (e.g., "multi-head attention" EXTENDS "self-attention").
+- RELATED_TO: The concepts are related but neither is prerequisite to or subsumed by the other
+  (e.g., "attention" RELATED_TO "optimization").
+- SUBTOPIC_OF: The new concept is a specific instance or subtype of an existing concept
+  (e.g., "self-attention" SUBTOPIC_OF "attention").
+- EXTENDS: The new concept builds on or extends an existing concept with additional nuance or
+  technique (e.g., "multi-head attention" EXTENDS "self-attention").
 
 GUIDANCE:
 - Only suggest relationships where the concepts are semantically related in the academic domain.
@@ -171,8 +175,7 @@ class KnowledgeGraphWriter:
             self._write_methods(profile, document_id)
             self._write_findings(profile, document_id)
             logger.info(
-                "KG: wrote profile for document_id=%r  title=%r  "
-                "concepts=%d  methods=%d  findings=%d",
+                "KG: wrote profile for document_id=%r  title=%r  concepts=%d  methods=%d  findings=%d",
                 document_id,
                 profile.title,
                 len(profile.concepts),
@@ -372,9 +375,7 @@ class KnowledgeGraphWriter:
                 raw_key = f"{document_id}:{category}:{index}:{text.lower()}"
                 items.append(
                     {
-                        "detail_key": hashlib.md5(
-                            raw_key.encode(), usedforsecurity=False
-                        ).hexdigest(),
+                        "detail_key": hashlib.md5(raw_key.encode(), usedforsecurity=False).hexdigest(),
                         "category": category,
                         "edge_label": edge_label,
                         "text": text,
@@ -443,9 +444,7 @@ class KnowledgeGraphWriter:
         """Upsert all methods and USES_METHOD edges in a single round-trip via UNWIND."""
         if not profile.methods:
             return
-        items = [
-            {"name": m.name, "description": m.description} for m in profile.methods
-        ]
+        items = [{"name": m.name, "description": m.description} for m in profile.methods]
         self._conn.execute_write(
             f"""UNWIND $items AS item
             MERGE (m:{METHOD} {{name: item.name}})
@@ -512,9 +511,7 @@ class KnowledgeGraphWriter:
                 chain.invoke(
                     {
                         f"new_{item_name}_json": json.dumps(new_items, indent=2),
-                        f"existing_{item_name}_json": json.dumps(
-                            existing_items, indent=2
-                        ),
+                        f"existing_{item_name}_json": json.dumps(existing_items, indent=2),
                     }
                 ).content
             )

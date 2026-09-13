@@ -114,8 +114,7 @@ class GraphBuilder:
                 tools.append(create_safe_graph_tool(neo4j_conn))
             else:
                 logger.warning(
-                    "use_graph=True but no Neo4j connection provided. "
-                    "Graph tool will not be available."
+                    "use_graph=True but no Neo4j connection provided. Graph tool will not be available."
                 )
 
         return tools

@@ -20,17 +20,11 @@ def _format_doc_result(doc: Document, index: int) -> str:
 
     type_badge = " [SUMMARY]" if chunk_type == "summary" else ""
     domain_badge = f" | {domain}" if domain else ""
-    return (
-        f"**Document {index}** (Paper: {paper}{domain_badge}, "
-        f"Chunk: {chunk_id}{type_badge}):\n\n"
-        f"{content}"
-    )
+    return f"**Document {index}** (Paper: {paper}{domain_badge}, Chunk: {chunk_id}{type_badge}):\n\n{content}"
 
 
 def _format_docs(docs: list[Document]) -> str:
-    return "\n\n---\n\n".join(
-        _format_doc_result(doc, i) for i, doc in enumerate(docs, 1)
-    )
+    return "\n\n---\n\n".join(_format_doc_result(doc, i) for i, doc in enumerate(docs, 1))
 
 
 def _search_error(exc: Exception) -> str:
@@ -41,9 +35,7 @@ def _search_error(exc: Exception) -> str:
 
 def _format_search(docs: list[Document], scope_label: str) -> str:
     return (
-        _format_docs(docs)
-        if docs
-        else f"No relevant content found in the uploaded documents{scope_label}."
+        _format_docs(docs) if docs else f"No relevant content found in the uploaded documents{scope_label}."
     )
 
 
