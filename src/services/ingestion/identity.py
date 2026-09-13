@@ -24,6 +24,10 @@ class DocumentIdentityError(RuntimeError):
     """Raised when document identity or upload storage cannot be completed."""
 
 
+class MetadataIntegrityError(ValueError):
+    """Raised when stored metadata cannot identify a document chunk."""
+
+
 def validate_document_id(document_id: str) -> str:
     """Validate and return the canonical cross-store document identity."""
     if not isinstance(document_id, str) or not _DOCUMENT_ID_RE.fullmatch(document_id):
@@ -38,6 +42,25 @@ def validate_chunk_id(chunk_id: str) -> str:
     if not isinstance(chunk_id, str) or not _CHUNK_ID_RE.fullmatch(chunk_id):
         raise ValueError("chunk_id must be a 32-character lowercase hexadecimal ID")
     return chunk_id
+
+
+def validate_metadata_identity(metadata: dict) -> dict:
+    """Validate the canonical metadata contract shared by RAG and ingestion."""
+    if not isinstance(metadata, dict):
+        raise MetadataIntegrityError("document metadata must be a dictionary")
+    try:
+        validate_document_id(metadata.get("document_id"))
+        validate_chunk_id(metadata.get("chunk_id"))
+    except ValueError as exc:
+        raise MetadataIntegrityError(f"invalid canonical document metadata: {exc}") from exc
+    for key in ("source_md5", "ingest_id"):
+        if key in metadata and (not isinstance(metadata[key], str) or not metadata[key].strip()):
+            raise MetadataIntegrityError(f"metadata field {key!r} must be a non-empty string")
+    if "paper_chunk" in metadata and (
+        not isinstance(metadata["paper_chunk"], str) or not metadata["paper_chunk"].strip()
+    ):
+        raise MetadataIntegrityError("metadata field 'paper_chunk' must be a non-empty string")
+    return metadata
 
 
 def make_chunk_id(document_id: str, chunk_label: str) -> str:

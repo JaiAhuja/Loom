@@ -81,6 +81,7 @@ class GraphBuilder:
                 tools,
                 system_prompt,
                 max_tool_iterations=settings.AGENT_MAX_TOOL_ITERATIONS,
+                max_tool_calls=settings.AGENT_MAX_TOOL_CALLS,
             ),
         )
 

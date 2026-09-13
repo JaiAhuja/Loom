@@ -32,6 +32,7 @@ from src.services.knowledge_graph.schema import (
 )
 from src.services.llm import get_llm
 from src.services.common.json_parser import parse_llm_json
+from src.services.ingestion.identity import validate_document_id
 
 if TYPE_CHECKING:
     from src.services.llm.paper_profile import PaperProfile
@@ -135,6 +136,7 @@ class KnowledgeGraphWriter:
 
     def is_paper_in_kg(self, document_id: str) -> bool:
         """Return True if a Paper node for this document_id already exists in Neo4j."""
+        validate_document_id(document_id)
         try:
             rows = self._conn.execute_read(
                 f"MATCH (p:{PAPER} {{document_id: $id}}) RETURN count(p) AS n",
@@ -146,6 +148,7 @@ class KnowledgeGraphWriter:
 
     def has_paper_details(self, document_id: str) -> bool:
         """Return True when a paper has the typed detail child nodes."""
+        validate_document_id(document_id)
         try:
             rows = self._conn.execute_read(
                 f"""MATCH (p:{PAPER} {{document_id: $id}})-[:{HAS_DETAIL}]->(d:{DETAIL})
@@ -167,6 +170,7 @@ class KnowledgeGraphWriter:
             profile: LLM-extracted paper profile.
             document_id: Canonical, filename-derived paper identity.
         """
+        validate_document_id(document_id)
         self._ensure_schema()
         try:
             queries: list[tuple[str, dict]] = []
@@ -209,6 +213,7 @@ class KnowledgeGraphWriter:
             Number of cross-finding edges created.  Returns 0 if there are no
             existing findings to compare against or if the LLM returns nothing useful.
         """
+        validate_document_id(document_id)
         paper_title = profile.title or document_id
         new_findings = [
             {
@@ -280,6 +285,7 @@ class KnowledgeGraphWriter:
             existing concepts to compare against (in the same domain) or if the
             LLM returns nothing useful.
         """
+        validate_document_id(document_id)
         new_concepts = [
             {
                 "concept_key": make_concept_key(c.name, c.domain or profile.domain),

@@ -13,7 +13,8 @@ for the chat and knowledge-graph pages.
   canonical document/chunk IDs and exposes explicit legacy metadata migration.
 
 Embeddings come from the `llm` service. The configured local Granite tokenizer
-is used by the chunking path; it must remain available at runtime. Reuse the
-cached instances from `ui.bootstrap` in Streamlit code. Tests are in
+is used by the chunking path; it must remain available at runtime. Streamlit
+owns reuse of app-level services through `ui.bootstrap`; the retrieval and
+provider modules do not keep process-global resource caches. Tests are in
 `tests/integration/test_retrieval_and_graph.py` and
 `tests/e2e/test_ingestion_to_chat.py`.

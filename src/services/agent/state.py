@@ -14,4 +14,6 @@ class AgentState(TypedDict):
 
     messages: Annotated[list[BaseMessage], add_messages]
     tool_iterations: NotRequired[int]
+    tool_calls_used: NotRequired[int]
     tool_call_signatures: NotRequired[list[str]]
+    empty_tool_result_count: NotRequired[int]

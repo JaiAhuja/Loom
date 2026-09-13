@@ -158,10 +158,17 @@ All settings are read from `.env` through `config/settings.py`.
 | `RAG_TOP_K` | `5` | Retrieved chunks per query |
 | `RAG_MAX_QUERY_LENGTH` | `4000` | Maximum RAG query length |
 | `AGENT_MAX_TOOL_ITERATIONS` | `4` | Maximum tool-use cycles per answer |
+| `AGENT_MAX_TOOL_CALLS` | `8` | Maximum individual tool calls per answer |
+| `AGENT_MAX_REPEATED_EMPTY_RESULTS` | `2` | Consecutive empty/failed tool results before stopping |
 | `NEO4J_URI` | `bolt://127.0.0.1:7687` | Neo4j connection URI |
 | `NEO4J_USERNAME` | `neo4j` | Neo4j username |
 | `NEO4J_PASSWORD` | unset | Required before creating a Neo4j connection |
 | `NEO4J_DATABASE` | unset | Optional named database |
+
+`APP_ENV` is intentionally not required. Loom is a local application: optional
+services are validated when a feature uses them, while enabled features fail
+with an actionable configuration error. Unknown configuration keys are
+rejected so misspelled settings do not silently change runtime behavior.
 
 ### LangSmith (optional)
 

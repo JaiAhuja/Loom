@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     RAG_MMR_LAMBDA: float = Field(default=0.4, ge=0.0, le=1.0)
     RAG_MAX_QUERY_LENGTH: int = Field(default=4000, ge=32, le=16000)
     AGENT_MAX_TOOL_ITERATIONS: int = Field(default=4, ge=1, le=20)
+    AGENT_MAX_TOOL_CALLS: int = Field(default=8, ge=1, le=40)
+    AGENT_MAX_REPEATED_EMPTY_RESULTS: int = Field(default=2, ge=1, le=10)
 
     @field_validator("OLLAMA_BASE_URL", "OLLAMA_MODEL", "OLLAMA_EMBEDDING_MODEL")
     @classmethod

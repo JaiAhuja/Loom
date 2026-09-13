@@ -46,17 +46,40 @@ def _tool_call_signature(tool_calls: list[dict]) -> str:
     return json.dumps(normalized, sort_keys=True, default=str)
 
 
+def _consecutive_failed_tool_results(messages: list) -> int:
+    """Count the trailing empty/error ToolMessages in graph state."""
+    count = 0
+    for message in reversed(messages):
+        if message.__class__.__name__ != "ToolMessage":
+            break
+        content = str(getattr(message, "content", ""))
+        if (
+            "[TOOL_RESULT status=empty]" in content
+            or "[TOOL_RESULT status=stale_document]" in content
+            or "[TOOL_ERROR kind=" in content
+        ):
+            count += 1
+        else:
+            break
+    return count
+
+
 def create_agent_node(
     llm,
     tools: list,
     system_prompt: str,
     max_tool_iterations: int | None = None,
+    max_tool_calls: int | None = None,
 ):
     """Create the agent node with an explicit tool set and prompt."""
     if max_tool_iterations is None:
         max_tool_iterations = settings.AGENT_MAX_TOOL_ITERATIONS
     if max_tool_iterations < 1:
         raise ValueError("max_tool_iterations must be positive")
+    if max_tool_calls is None:
+        max_tool_calls = settings.AGENT_MAX_TOOL_CALLS
+    if max_tool_calls < 1:
+        raise ValueError("max_tool_calls must be positive")
     llm_with_tools = llm.bind_tools(tools) if tools else llm
     prompt = ChatPromptTemplate.from_messages(
         [("system", system_prompt), MessagesPlaceholder(variable_name="messages")]
@@ -66,7 +89,16 @@ def create_agent_node(
     def agent_node(state: AgentState) -> dict:
         messages = state.get("messages") or []
         iterations = state.get("tool_iterations", 0)
-        if iterations >= max_tool_iterations:
+        tool_calls_used = state.get("tool_calls_used", 0)
+        failed_results = max(
+            _consecutive_failed_tool_results(messages),
+            state.get("empty_tool_result_count", 0),
+        )
+        if (
+            iterations >= max_tool_iterations
+            or tool_calls_used >= max_tool_calls
+            or failed_results >= settings.AGENT_MAX_REPEATED_EMPTY_RESULTS
+        ):
             return {
                 "messages": [
                     AIMessage(
@@ -96,6 +128,7 @@ def create_agent_node(
         return {
             "messages": [response],
             "tool_iterations": iterations + 1,
+            "tool_calls_used": tool_calls_used + len(tool_calls),
             "tool_call_signatures": [*seen_signatures, signature],
         }
 
@@ -111,5 +144,12 @@ def should_continue(state: AgentState, max_tool_iterations: int | None = None) -
         return "end"
     last_message = messages[-1]
     if state.get("tool_iterations", 0) >= max_tool_iterations:
+        return "end"
+    if state.get("tool_calls_used", 0) >= settings.AGENT_MAX_TOOL_CALLS:
+        return "end"
+
+    empty_results = _consecutive_failed_tool_results(messages)
+    empty_results = max(empty_results, state.get("empty_tool_result_count", 0))
+    if empty_results >= settings.AGENT_MAX_REPEATED_EMPTY_RESULTS:
         return "end"
     return "tools" if getattr(last_message, "tool_calls", None) else "end"

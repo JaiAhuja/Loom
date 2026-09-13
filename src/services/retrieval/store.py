@@ -6,7 +6,12 @@ from langchain_chroma import Chroma
 from langchain_core.documents import Document
 
 from config.settings import settings
-from src.services.ingestion.identity import make_chunk_id, validate_chunk_id, validate_document_id
+from src.services.ingestion.identity import (
+    make_chunk_id,
+    validate_chunk_id,
+    validate_document_id,
+    validate_metadata_identity,
+)
 from src.services.llm import get_embeddings
 
 
@@ -53,6 +58,7 @@ class VectorStoreManager:
         for key, value in normalized.items():
             if not isinstance(value, (str, int, float, bool)):
                 raise ValueError(f"Metadata field {key!r} must be a scalar value")
+        validate_metadata_identity(normalized)
         doc.metadata = normalized
         return normalized
 
@@ -253,7 +259,7 @@ class VectorStoreManager:
                 if not doc_id:
                     logger.warning("Ignoring legacy Chroma metadata without document_id")
                     continue
-                validate_document_id(doc_id)
+                validate_metadata_identity(meta)
                 title = meta.get("paper") or meta.get("source") or doc_id
                 entry = by_doc.setdefault(
                     doc_id,
@@ -294,6 +300,7 @@ class VectorStoreManager:
                 return None
 
             first = next((metadata for metadata in metadatas if metadata), {})
+            validate_metadata_identity(first)
             title = first.get("paper") or first.get("source") or "Unknown"
             return {
                 "document_id": document_id,

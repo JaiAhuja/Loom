@@ -21,6 +21,8 @@ def test_settings_loads_with_defaults():
     assert s.NEO4J_URI == "bolt://127.0.0.1:7687"
     assert s.NEO4J_DATABASE is None
     assert s.RAG_TOP_K == 5
+    assert s.AGENT_MAX_TOOL_CALLS == 8
+    assert s.AGENT_MAX_REPEATED_EMPTY_RESULTS == 2
 
 
 def test_langsmith_defaults_are_off():
