@@ -117,11 +117,15 @@ loom/
 ├── pages/                    # Chat, Knowledge Graph, and Chat History pages
 ├── config/                   # Pydantic settings
 ├── src/domain/               # Shared domain models
-├── src/services/             # Agent, ingestion, RAG, KG, LLM, chat, and UI
+├── src/services/             # Modular service boundaries (see src/services/README.md)
 ├── data/                     # Local PDFs, profiles, chat history, and ChromaDB
 ├── requirements.txt          # Runtime, test, and development dependencies
 └── tests/                    # Unit, integration, and end-to-end tests
 ```
+
+The service packages are in-process boundaries within Loom's modular-monolith
+architecture. See the [service catalog](src/services/README.md) for each
+package's responsibilities, public APIs, and dependency flow.
 
 ## 🧪 Testing
 
