@@ -4,7 +4,7 @@ import threading
 
 from neo4j import AsyncGraphDatabase, GraphDatabase
 
-from config.settings import settings
+from config.settings import settings, validate_runtime_settings
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,10 @@ class Neo4jConnection:
     ):
         self.uri = uri or settings.NEO4J_URI
         self.username = username or settings.NEO4J_USERNAME
-        self.password = password or settings.NEO4J_PASSWORD
+        validate_runtime_settings()
+        self.password = password if password is not None else settings.NEO4J_PASSWORD
+        if not self.password:
+            raise ValueError("NEO4J_PASSWORD must be configured before creating a Neo4j connection")
         self.database = database or getattr(settings, "NEO4J_DATABASE", None)
         self._driver = None
         self._async_driver = None
@@ -210,11 +213,10 @@ _shared_connection_lock = threading.RLock()
 
 
 def get_neo4j_connection() -> Neo4jConnection:
-    """Return the process-wide shared :class:`Neo4jConnection` singleton.
+    """Return the legacy process-wide connection.
 
-    The same instance is returned on every call; the underlying Neo4j driver
-    is lazy-initialised on first use and re-used across all Streamlit pages
-    and background workers in the same process.
+    Prefer ``create_neo4j_connection`` and pass the resulting instance to the
+    service that owns it. This adapter remains for Streamlit compatibility.
     """
     global _shared_connection
     if _shared_connection is None:
@@ -223,6 +225,11 @@ def get_neo4j_connection() -> Neo4jConnection:
                 _shared_connection = Neo4jConnection()
                 atexit.register(reset_neo4j_connection)
     return _shared_connection
+
+
+def create_neo4j_connection(**kwargs) -> Neo4jConnection:
+    """Create an explicitly owned Neo4j connection for one app/session scope."""
+    return Neo4jConnection(**kwargs)
 
 
 def reset_neo4j_connection() -> None:
