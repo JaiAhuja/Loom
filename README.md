@@ -55,16 +55,16 @@ git clone https://github.com/JaiAhuja/Loom.git
 cd Loom
 ```
 
-### 2. Create an environment and install dependencies
+### 2. Create the `Loom` environment and install dependencies
 
 ```bash
-python -m venv .venv
+python -m venv Loom
 
 # macOS/Linux
-source .venv/bin/activate
+source Loom/bin/activate
 
 # Windows
-# .venv\Scripts\activate
+# Loom\Scripts\activate
 
 pip install -r requirements.txt
 pre-commit install  # optional, enables checks before each commit
