@@ -20,7 +20,9 @@ class InMemoryRetriever:
     documents: list[Document]
 
     def invoke(self, query: str):
-        return [doc for doc in self.documents if query.lower() in doc.page_content.lower()]
+        return [
+            doc for doc in self.documents if query.lower() in doc.page_content.lower()
+        ]
 
     async def ainvoke(self, query: str):
         return self.invoke(query)
@@ -36,13 +38,21 @@ class InMemoryVectorStore:
             for doc in self.documents.get(collection_name, [])
         )
 
-    def add_documents(self, documents: list[Document], collection_name: str = "default") -> None:
+    def add_documents(
+        self, documents: list[Document], collection_name: str = "default"
+    ) -> None:
         self.documents.setdefault(collection_name, []).extend(documents)
 
-    def get_retriever(self, collection_name: str, top_k: int, document_id: str | None = None):
+    def get_retriever(
+        self, collection_name: str, top_k: int, document_id: str | None = None
+    ):
         documents = self.documents.get(collection_name, [])
         if document_id:
-            documents = [doc for doc in documents if doc.metadata.get("document_id") == document_id]
+            documents = [
+                doc
+                for doc in documents
+                if doc.metadata.get("document_id") == document_id
+            ]
         return InMemoryRetriever(documents[:top_k])
 
 
@@ -58,7 +68,10 @@ class FakeProcessor:
         }
         return {
             "chunks": [
-                Document("Attention improves sequence modeling", {**metadata, "chunk_type": "content"}),
+                Document(
+                    "Attention improves sequence modeling",
+                    {**metadata, "chunk_type": "content"},
+                ),
                 Document("Attention summary", {**metadata, "chunk_type": "summary"}),
             ],
             "markdown": "# Attention Paper\nAttention improves sequence modeling",
@@ -86,10 +99,15 @@ def test_uploaded_pdf_can_be_ingested_retrieved_and_saved_to_chat(tmp_path):
     assert "Attention Paper" in answer
 
     chat_store = ChatStore(directory=str(tmp_path / "chat_history"))
-    path = chat_store.save([
-        {"role": "user", "content": "What does the paper say about sequence modeling?"},
-        {"role": "assistant", "content": answer},
-    ])
+    path = chat_store.save(
+        [
+            {
+                "role": "user",
+                "content": "What does the paper say about sequence modeling?",
+            },
+            {"role": "assistant", "content": answer},
+        ]
+    )
     record = chat_store.load(path.split("/")[-1])
     assert record.messages[-1]["content"] == answer
     assert "Attention Paper" in chat_store.render_markdown(path.split("/")[-1])

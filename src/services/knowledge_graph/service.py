@@ -44,7 +44,9 @@ class GraphQueryService:
         required, method, fixed_args = _INTENTS[intent]
         missing = [p for p in required if p not in params]
         if missing:
-            raise ValueError(f"Intent {intent!r} requires {required}; missing: {missing}")
+            raise ValueError(
+                f"Intent {intent!r} requires {required}; missing: {missing}"
+            )
         return method, (*fixed_args, *(params[name] for name in required)), params
 
     def execute(self, intent: str, params: dict[str, Any] | None = None) -> dict:

@@ -66,7 +66,9 @@ OPTIONAL MATCH (m:{METHOD}) WITH papers, concepts, count(m) AS methods
 OPTIONAL MATCH (f:{FINDING}) WITH papers, concepts, methods, count(f) AS findings
 OPTIONAL MATCH (d:{DETAIL}) WITH papers, concepts, methods, findings, count(d) AS details
 RETURN papers, concepts, methods, findings, details"""
-_EMPTY_STATS = dict.fromkeys(("papers", "concepts", "methods", "findings", "details"), 0)
+_EMPTY_STATS = dict.fromkeys(
+    ("papers", "concepts", "methods", "findings", "details"), 0
+)
 
 
 class KnowledgeGraphQueries:
@@ -79,7 +81,6 @@ class KnowledgeGraphQueries:
 
     def __init__(self, conn: Neo4jConnection):
         self.conn = conn
-
 
     def get_all_papers(self) -> list[dict]:
         """Get all papers with their metadata and concept count."""
@@ -99,7 +100,6 @@ class KnowledgeGraphQueries:
             key: self.conn.execute_read(query, params)
             for key, query in zip(_DETAIL_KEYS, _PAPER_DETAILS_QUERIES)
         }
-
 
     def get_shared_concepts(self, paper_a: str, paper_b: str) -> list[dict]:
         """Find concepts discussed by both papers."""
@@ -123,7 +123,6 @@ class KnowledgeGraphQueries:
                    r.reason AS reason"""
         )
 
-
     def get_all_concepts(self) -> list[dict]:
         """Get all concepts with the count of papers that discuss them."""
         return self.conn.execute_read(_CONCEPTS_QUERY)
@@ -138,14 +137,14 @@ class KnowledgeGraphQueries:
 
     def get_related_concepts(self, concept_name: str) -> list[dict]:
         """Get concepts related to a given concept.
-        
+
         Returns all concepts connected via RELATED_TO, SUBTOPIC_OF, or EXTENDS relationships.
         """
         return self.conn.execute_read(_RELATED_CONCEPTS_QUERY, {"name": concept_name})
 
     def get_concept_hierarchy(self, concept_name: str) -> dict:
         """Get hierarchical relationships for a concept.
-        
+
         Returns:
             - 'prerequisites': concepts this one depends on (SUBTOPIC_OF incoming)
             - 'related': related concepts (RELATED_TO both directions)
@@ -171,7 +170,6 @@ class KnowledgeGraphQueries:
             "related": related or [],
             "extensions": extensions or [],
         }
-
 
     def get_graph_stats(self) -> dict:
         """Get high-level statistics about the knowledge graph."""
@@ -230,10 +228,15 @@ class KnowledgeGraphQueries:
                     {"key": doc_id},
                 )
                 paper_meta = paper_rows[0] if paper_rows else {}
-                tooltip = "\n\n".join(filter(None, [
-                    title,
-                    paper_meta.get("summary") or "",
-                ]))
+                tooltip = "\n\n".join(
+                    filter(
+                        None,
+                        [
+                            title,
+                            paper_meta.get("summary") or "",
+                        ],
+                    )
+                )
                 node_data = {
                     "id": paper_id,
                     "label": (title or "")[:40],
@@ -282,8 +285,8 @@ class KnowledgeGraphQueries:
         if document_ids:
             paper_filters.append("p.document_id IN $document_ids")
         paper_where_clause = (
-            " WHERE " + " AND ".join(paper_filters)
-        ) if paper_filters else ""
+            (" WHERE " + " AND ".join(paper_filters)) if paper_filters else ""
+        )
 
         if _include(DISCUSSES):
             results = self.conn.execute_read(
@@ -303,20 +306,27 @@ class KnowledgeGraphQueries:
                 _add_node(
                     concept_id,
                     label=row["concept"],
-                    title="\n".join(filter(None, [
-                        f"{row['concept']} ({row.get('concept_domain', '')})",
-                        row.get("concept_description") or "",
-                    ])),
+                    title="\n".join(
+                        filter(
+                            None,
+                            [
+                                f"{row['concept']} ({row.get('concept_domain', '')})",
+                                row.get("concept_description") or "",
+                            ],
+                        )
+                    ),
                     group="concept",
                     size=15,
                 )
 
-                edges.append({
-                    "from": paper_id,
-                    "to": concept_id,
-                    "label": "DISCUSSES",
-                    "color": "#4CAF50" if row["depth"] == "core" else "#9E9E9E",
-                })
+                edges.append(
+                    {
+                        "from": paper_id,
+                        "to": concept_id,
+                        "label": "DISCUSSES",
+                        "color": "#4CAF50" if row["depth"] == "core" else "#9E9E9E",
+                    }
+                )
 
         if _include(HAS_DETAIL):
             detail_results = self.conn.execute_read(
@@ -333,19 +343,28 @@ class KnowledgeGraphQueries:
                 _add_node(
                     detail_id,
                     label=row.get("category", "detail").replace("_", " ").title(),
-                    title="\n\n".join(filter(None, [
-                        row.get("text") or "",
-                        f"Evidence: {row.get('evidence')}" if row.get("evidence") else "",
-                    ])),
+                    title="\n\n".join(
+                        filter(
+                            None,
+                            [
+                                row.get("text") or "",
+                                f"Evidence: {row.get('evidence')}"
+                                if row.get("evidence")
+                                else "",
+                            ],
+                        )
+                    ),
                     group="detail",
                     size=13,
                 )
-                edges.append({
-                    "from": paper_id,
-                    "to": detail_id,
-                    "label": row.get("edge_label") or "HAS_DETAIL",
-                    "color": "#B388FF",
-                })
+                edges.append(
+                    {
+                        "from": paper_id,
+                        "to": detail_id,
+                        "label": row.get("edge_label") or "HAS_DETAIL",
+                        "color": "#B388FF",
+                    }
+                )
 
         if _include(USES_METHOD):
             method_results = self.conn.execute_read(
@@ -365,12 +384,14 @@ class KnowledgeGraphQueries:
                     group="method",
                     size=14,
                 )
-                edges.append({
-                    "from": paper_id,
-                    "to": method_id,
-                    "label": "USES_METHOD",
-                    "color": "#FFD54F",
-                })
+                edges.append(
+                    {
+                        "from": paper_id,
+                        "to": method_id,
+                        "label": "USES_METHOD",
+                        "color": "#FFD54F",
+                    }
+                )
 
         if _include(HAS_FINDING):
             finding_results = self.conn.execute_read(
@@ -387,19 +408,28 @@ class KnowledgeGraphQueries:
                 _add_node(
                     finding_id,
                     label="Finding",
-                    title="\n".join(filter(None, [
-                        row.get("claim") or "",
-                        f"Evidence type: {row.get('evidence_type')}" if row.get("evidence_type") else "",
-                    ])),
+                    title="\n".join(
+                        filter(
+                            None,
+                            [
+                                row.get("claim") or "",
+                                f"Evidence type: {row.get('evidence_type')}"
+                                if row.get("evidence_type")
+                                else "",
+                            ],
+                        )
+                    ),
                     group="finding",
                     size=13,
                 )
-                edges.append({
-                    "from": paper_id,
-                    "to": finding_id,
-                    "label": "HAS_FINDING",
-                    "color": "#80CBC4",
-                })
+                edges.append(
+                    {
+                        "from": paper_id,
+                        "to": finding_id,
+                        "label": "HAS_FINDING",
+                        "color": "#80CBC4",
+                    }
+                )
 
         for concept_rel_type, concept_color in (
             (RELATED_TO, "#2196F3"),
@@ -419,18 +449,20 @@ class KnowledgeGraphQueries:
                 from_id = f"concept:{row['from_concept']}"
                 to_id = f"concept:{row['to_concept']}"
                 if from_id in seen_nodes and to_id in seen_nodes:
-                    edges.append({
-                        "from": from_id,
-                        "to": to_id,
-                        "label": concept_rel_type,
-                        "color": concept_color,
-                        "dashes": concept_rel_type == RELATED_TO,
-                    })
+                    edges.append(
+                        {
+                            "from": from_id,
+                            "to": to_id,
+                            "label": concept_rel_type,
+                            "color": concept_color,
+                            "dashes": concept_rel_type == RELATED_TO,
+                        }
+                    )
 
         finding_rel_specs = [
-            (SUPPORTS,    "#4CAF50"),
+            (SUPPORTS, "#4CAF50"),
             (CONTRADICTS, "#F44336"),
-            (EXTENDS,     "#FF9800"),
+            (EXTENDS, "#FF9800"),
         ]
         for rel_type, color in finding_rel_specs:
             if not _include(rel_type):
@@ -445,22 +477,23 @@ class KnowledgeGraphQueries:
             for row in finding_rels:
                 p1_id = f"paper:{row['paper1_doc'] or row['paper1']}"
                 p2_id = f"paper:{row['paper2_doc'] or row['paper2']}"
-                
+
                 if p1_id not in seen_nodes:
-                    _add_paper_node(row['paper1_doc'] or row['paper1'], row["paper1"])
+                    _add_paper_node(row["paper1_doc"] or row["paper1"], row["paper1"])
                 if p2_id not in seen_nodes:
-                    _add_paper_node(row['paper2_doc'] or row['paper2'], row["paper2"])
-                
-                edges.append({
-                    "from": p1_id,
-                    "to": p2_id,
-                    "label": rel_type,
-                    "color": color,
-                    "width": 3,
-                })
+                    _add_paper_node(row["paper2_doc"] or row["paper2"], row["paper2"])
+
+                edges.append(
+                    {
+                        "from": p1_id,
+                        "to": p2_id,
+                        "label": rel_type,
+                        "color": color,
+                        "width": 3,
+                    }
+                )
 
         return {"nodes": nodes, "edges": edges}
-
 
     def delete_paper(self, document_id: str) -> dict:
         """Detach-delete a paper and clean up orphaned entities.
@@ -484,7 +517,13 @@ class KnowledgeGraphQueries:
         """
         rows = self.conn.execute_read(orphan_query, {"document_id": document_id})
         if not rows:
-            return {"papers": 0, "findings": 0, "concepts": 0, "methods": 0, "authors": 0}
+            return {
+                "papers": 0,
+                "findings": 0,
+                "concepts": 0,
+                "methods": 0,
+                "authors": 0,
+            }
         concept_keys = [k for k in rows[0]["concept_keys"] if k]
         method_names = [n for n in rows[0]["method_names"] if n]
         author_names = [n for n in rows[0]["author_names"] if n]
@@ -556,7 +595,6 @@ class KnowledgeGraphQueries:
             "authors": authors_removed,
         }
 
-
     def evidence_for_concept(self, concept_name: str) -> dict:
         """Collect cross-paper evidence for a concept.
 
@@ -584,18 +622,24 @@ class KnowledgeGraphQueries:
                r.reason AS reason
         """
         rows = self.conn.execute_read(query, {"name": concept_name})
-        grouped: dict[str, list[dict]] = {"supports": [], "contradicts": [], "extends": []}
+        grouped: dict[str, list[dict]] = {
+            "supports": [],
+            "contradicts": [],
+            "extends": [],
+        }
         for row in rows:
             bucket = row["rel_type"].lower()
             if bucket not in grouped:
                 continue
-            grouped[bucket].append({
-                "paper_1": row["paper_1"],
-                "finding_1": row["finding_1"],
-                "paper_2": row["paper_2"],
-                "finding_2": row["finding_2"],
-                "reason": row.get("reason") or "",
-            })
+            grouped[bucket].append(
+                {
+                    "paper_1": row["paper_1"],
+                    "finding_1": row["finding_1"],
+                    "paper_2": row["paper_2"],
+                    "finding_2": row["finding_2"],
+                    "reason": row.get("reason") or "",
+                }
+            )
         return grouped
 
     def get_conflict_matrix(self) -> list[dict]:
@@ -615,18 +659,20 @@ class KnowledgeGraphQueries:
         matrix: dict[tuple[str, str], dict] = {}
         for row in rows:
             key = (row["paper_a"], row["paper_b"])
-            entry = matrix.setdefault(key, {
-                "paper_a": row["paper_a"],
-                "paper_b": row["paper_b"],
-                "supports": 0,
-                "contradicts": 0,
-                "extends": 0,
-            })
+            entry = matrix.setdefault(
+                key,
+                {
+                    "paper_a": row["paper_a"],
+                    "paper_b": row["paper_b"],
+                    "supports": 0,
+                    "contradicts": 0,
+                    "extends": 0,
+                },
+            )
             bucket = row["rel_type"].lower()
             if bucket in entry:
                 entry[bucket] += row["cnt"]
         return list(matrix.values())
-
 
     async def aget_all_papers(self) -> list[dict]:
         return await self.conn.aexecute_read(_PAPERS_QUERY)
@@ -636,9 +682,12 @@ class KnowledgeGraphQueries:
         if not document_id:
             return {key: [] for key in _DETAIL_KEYS}
         params = {"key": document_id}
-        results = await asyncio.gather(*(
-            self.conn.aexecute_read(query, params) for query in _PAPER_DETAILS_QUERIES
-        ))
+        results = await asyncio.gather(
+            *(
+                self.conn.aexecute_read(query, params)
+                for query in _PAPER_DETAILS_QUERIES
+            )
+        )
         return dict(zip(_DETAIL_KEYS, results))
 
     async def aget_shared_concepts(self, paper_a: str, paper_b: str) -> list[dict]:

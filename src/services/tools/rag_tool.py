@@ -28,7 +28,9 @@ def _format_doc_result(doc: Document, index: int) -> str:
 
 
 def _format_docs(docs: list[Document]) -> str:
-    return "\n\n---\n\n".join(_format_doc_result(doc, i) for i, doc in enumerate(docs, 1))
+    return "\n\n---\n\n".join(
+        _format_doc_result(doc, i) for i, doc in enumerate(docs, 1)
+    )
 
 
 def _search_error(exc: Exception) -> str:
@@ -39,7 +41,8 @@ def _search_error(exc: Exception) -> str:
 
 def _format_search(docs: list[Document], scope_label: str) -> str:
     return (
-        _format_docs(docs) if docs
+        _format_docs(docs)
+        if docs
         else f"No relevant content found in the uploaded documents{scope_label}."
     )
 
@@ -92,7 +95,10 @@ def create_rag_tool(
         try:
             return _format_search(retriever.invoke(query), scope_label)
         except Exception as e:
-            logger.error(f"Document search failed for query '{query}': {type(e).__name__}: {e}", exc_info=True)
+            logger.error(
+                f"Document search failed for query '{query}': {type(e).__name__}: {e}",
+                exc_info=True,
+            )
             return _search_error(e)
 
     async def _aquery_documents(query: str) -> str:
@@ -100,7 +106,10 @@ def create_rag_tool(
         try:
             return _format_search(await retriever.ainvoke(query), scope_label)
         except Exception as e:
-            logger.error(f"Async document search failed for query '{query}': {type(e).__name__}: {e}", exc_info=True)
+            logger.error(
+                f"Async document search failed for query '{query}': {type(e).__name__}: {e}",
+                exc_info=True,
+            )
             return _search_error(e)
 
     return StructuredTool.from_function(

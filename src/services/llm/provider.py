@@ -7,14 +7,13 @@ _embeddings_cache: dict[str, OllamaEmbeddings] = {}
 
 
 def get_llm(
-    model: str = None, 
-    temperature: float = None,  
-    require_json: bool = False
+    model: str = None, temperature: float = None, require_json: bool = False
 ) -> ChatOllama:
-    
     resolved_model = model or settings.OLLAMA_MODEL
-    resolved_temp = temperature if temperature is not None else settings.OLLAMA_TEMPERATURE
-    
+    resolved_temp = (
+        temperature if temperature is not None else settings.OLLAMA_TEMPERATURE
+    )
+
     key = (resolved_model, resolved_temp, require_json)
 
     if key not in _llm_cache:
@@ -25,12 +24,12 @@ def get_llm(
             "temperature": resolved_temp,
             "num_ctx": settings.OLLAMA_NUM_CTX,
         }
-        
+
         if require_json:
             kwargs["format"] = "json"
 
         _llm_cache[key] = ChatOllama(**kwargs)
-        
+
     return _llm_cache[key]
 
 

@@ -12,15 +12,25 @@ pytestmark = pytest.mark.integration
 
 
 def test_chat_error_formatter_classifies_connection_and_model_failures():
-    assert "Connection Error" in format_chat_error(RuntimeError("connection refused"), "model")
+    assert "Connection Error" in format_chat_error(
+        RuntimeError("connection refused"), "model"
+    )
     assert "Model Error" in format_chat_error(RuntimeError("model not found"), "model")
     assert "**Error:**" in format_chat_error(RuntimeError("other"), "model")
 
 
 def test_status_bar_escapes_user_supplied_labels(monkeypatch):
     rendered = []
-    monkeypatch.setattr("src.services.ui.chrome.st.markdown", lambda text, **kwargs: rendered.append(text))
-    render_status_bar("model<1>", collection_name="notes&more", paper_filter="Paper <A>", use_graph=True)
+    monkeypatch.setattr(
+        "src.services.ui.chrome.st.markdown",
+        lambda text, **kwargs: rendered.append(text),
+    )
+    render_status_bar(
+        "model<1>",
+        collection_name="notes&more",
+        paper_filter="Paper <A>",
+        use_graph=True,
+    )
     assert "model&lt;1&gt;" in rendered[0]
     assert "notes&amp;more" in rendered[0]
     assert "Paper &lt;A&gt;" in rendered[0]

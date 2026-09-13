@@ -1,4 +1,8 @@
-from src.services.llm.paper_profile import PaperProfile, aextract_paper_profile, extract_paper_profile
+from src.services.llm.paper_profile import (
+    PaperProfile,
+    aextract_paper_profile,
+    extract_paper_profile,
+)
 from src.services.llm.provider import get_embeddings, get_llm
 
 __all__ = [

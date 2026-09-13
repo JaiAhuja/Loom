@@ -28,7 +28,6 @@ CROSS_FINDING_RELS: frozenset[str] = frozenset({SUPPORTS, CONTRADICTS, EXTENDS})
 CROSS_CONCEPT_RELS: frozenset[str] = frozenset({RELATED_TO, SUBTOPIC_OF, EXTENDS})
 
 
-
 def make_concept_key(name: str, domain: str) -> str:
     """Build a composite identity key for a Concept node.
 

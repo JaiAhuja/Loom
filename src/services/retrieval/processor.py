@@ -44,7 +44,9 @@ def _build_granite_tokenizer():
             return self._hf_tokenizer
 
         def __call__(self, text: str):
-            return self._hf_tokenizer(text, return_tensors="pt", add_special_tokens=False)
+            return self._hf_tokenizer(
+                text, return_tensors="pt", add_special_tokens=False
+            )
 
         def encode(self, text: str) -> list[int]:
             return self._hf_tokenizer.encode(text, add_special_tokens=False)
@@ -98,9 +100,9 @@ class DocumentProcessor:
         """Lazy-initialize the Docling DocumentConverter."""
         if self._converter is None:
             from docling.document_converter import DocumentConverter
+
             self._converter = DocumentConverter()
         return self._converter
-
 
     @staticmethod
     def _paper_name_from_file(file_name: str) -> str:
@@ -112,15 +114,19 @@ class DocumentProcessor:
         name = os.path.splitext(file_name)[0]
         return re.sub(r"[-_]+", " ", name).strip().title()
 
-
     @staticmethod
     def generate_chunk_id(document_id: str, paper_chunk: str) -> str:
         """Derive a deterministic chunk ID from document_id and chunk label."""
         key = f"{document_id}:{paper_chunk}"
         return hashlib.md5(key.encode(), usedforsecurity=False).hexdigest()
 
-    def process(self, file_path: str, model: str = None, extra_metadata: dict = None,
-                on_step: Optional[Callable[[str], None]] = None) -> dict:
+    def process(
+        self,
+        file_path: str,
+        model: str = None,
+        extra_metadata: dict = None,
+        on_step: Optional[Callable[[str], None]] = None,
+    ) -> dict:
         """Process a single PDF into semantically-chunked documents plus a summary.
 
         One LLM call produces the full :class:`PaperProfile` (title, domain,
@@ -161,7 +167,10 @@ class DocumentProcessor:
         result = self.converter.convert(file_path)
         dl_doc = result.document
         markdown_text = dl_doc.export_to_markdown()
-        print(f"  [processor] PDF converted — {len(markdown_text):,} chars of text", flush=True)
+        print(
+            f"  [processor] PDF converted — {len(markdown_text):,} chars of text",
+            flush=True,
+        )
 
         try:
             txt_dir = os.path.join("data", "txt")
@@ -180,7 +189,10 @@ class DocumentProcessor:
             llm = get_llm(model=model, temperature=0.1, require_json=True)
             profile = extract_paper_profile(llm, markdown_text, file_name)
             title_preview = profile.title if profile else "n/a"
-            print(f"  [processor] Profile extracted — title: '{title_preview}'", flush=True)
+            print(
+                f"  [processor] Profile extracted — title: '{title_preview}'",
+                flush=True,
+            )
 
         fallback_title = self._paper_name_from_file(file_name)
         if profile and profile.title.strip():
@@ -204,15 +216,17 @@ class DocumentProcessor:
         enriched: list[Document] = []
         for i, chunk in enumerate(raw_chunks):
             enriched_text = self.chunker.contextualize(chunk=chunk)
-            enriched.append(Document(
-                page_content=enriched_text,
-                metadata={
-                    **base_metadata,
-                    "paper_chunk": f"chunk_{i + 1:03d}",
-                    "chunk_type": "content",
-                    "chunk_index": i,
-                },
-            ))
+            enriched.append(
+                Document(
+                    page_content=enriched_text,
+                    metadata={
+                        **base_metadata,
+                        "paper_chunk": f"chunk_{i + 1:03d}",
+                        "chunk_type": "content",
+                        "chunk_index": i,
+                    },
+                )
+            )
 
         if summary_text:
             summary_doc = Document(
@@ -231,7 +245,9 @@ class DocumentProcessor:
                 doc.metadata.update(extra_metadata)
 
         for doc in enriched:
-            doc_id = doc.metadata.get("document_id", doc.metadata.get("source", file_name))
+            doc_id = doc.metadata.get(
+                "document_id", doc.metadata.get("source", file_name)
+            )
             chunk_label = doc.metadata.get("paper_chunk", "unknown")
             doc.metadata["chunk_id"] = self.generate_chunk_id(doc_id, chunk_label)
 

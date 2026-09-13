@@ -9,7 +9,6 @@ from config.settings import Settings, configure_langsmith
 pytestmark = pytest.mark.unit
 
 
-
 def test_settings_loads_with_defaults():
     """Settings can be instantiated and exposes expected default values."""
     s = Settings()
@@ -30,7 +29,6 @@ def test_langsmith_defaults_are_off():
     assert s.LANGSMITH_API_KEY == ""
     assert s.LANGSMITH_TRACING is False
     assert s.LANGCHAIN_PROJECT == "Loom"
-
 
 
 def test_configure_langsmith_noop_when_disabled(monkeypatch):

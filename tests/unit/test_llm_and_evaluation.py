@@ -7,7 +7,12 @@ import pytest
 
 pytest.importorskip("langchain_core")
 
-from src.services.evaluation.judge import EvaluationResult, RAGJudge, _parse_result, _score
+from src.services.evaluation.judge import (
+    EvaluationResult,
+    RAGJudge,
+    _parse_result,
+    _score,
+)
 from src.services.llm import paper_profile
 
 pytestmark = pytest.mark.unit
@@ -22,13 +27,18 @@ def test_profile_section_selection_prioritizes_key_sections():
 
 
 def test_profile_builder_normalizes_domain_and_detail_shapes():
-    profile = paper_profile._build_profile({
-        "title": "Paper",
-        "domain": "nlp",
-        "contributions": ["A contribution", {"text": "Another", "evidence": "Table 1"}],
-        "concepts": [{"name": "attention", "domain": "ai"}],
-        "findings": [{"claim": "It works", "evidence_type": "empirical"}],
-    })
+    profile = paper_profile._build_profile(
+        {
+            "title": "Paper",
+            "domain": "nlp",
+            "contributions": [
+                "A contribution",
+                {"text": "Another", "evidence": "Table 1"},
+            ],
+            "concepts": [{"name": "attention", "domain": "ai"}],
+            "findings": [{"claim": "It works", "evidence_type": "empirical"}],
+        }
+    )
     assert profile is not None
     assert profile.domain == "Natural Language Processing"
     assert profile.contributions[0].text == "A contribution"
@@ -36,10 +46,15 @@ def test_profile_builder_normalizes_domain_and_detail_shapes():
 
 
 def test_profile_response_parser_rejects_error_payloads():
-    assert paper_profile._parse_profile_response(SimpleNamespace(content='{"error": "bad"}')) is None
-    assert paper_profile._parse_profile_response(SimpleNamespace(content='{"title": "ok"}')) == {
-        "title": "ok"
-    }
+    assert (
+        paper_profile._parse_profile_response(
+            SimpleNamespace(content='{"error": "bad"}')
+        )
+        is None
+    )
+    assert paper_profile._parse_profile_response(
+        SimpleNamespace(content='{"title": "ok"}')
+    ) == {"title": "ok"}
 
 
 def test_evaluation_scores_are_clamped_and_rendered():
@@ -54,7 +69,11 @@ def test_evaluation_scores_are_clamped_and_rendered():
 
 
 def test_evaluation_parser_accepts_response_objects_and_rejects_bad_json():
-    good = _parse_result(SimpleNamespace(content='{"context_relevance": 4, "faithfulness": 5, "answer_relevance": 3}'))
+    good = _parse_result(
+        SimpleNamespace(
+            content='{"context_relevance": 4, "faithfulness": 5, "answer_relevance": 3}'
+        )
+    )
     assert good == EvaluationResult(4, 5, 3, "")
     assert _parse_result(SimpleNamespace(content="bad")) is None
 

@@ -37,7 +37,10 @@ _DETAIL_FIELDS = (
 
 def _safe_sidecar_stem(document_id: str) -> str:
     """Return a path-safe sidecar stem for a document id."""
-    return os.path.basename(str(document_id or "document").replace("\\", "/")) or "document"
+    return (
+        os.path.basename(str(document_id or "document").replace("\\", "/"))
+        or "document"
+    )
 
 
 def _profile_sidecar_path(document_id: str) -> str:
@@ -62,6 +65,7 @@ def _save_profile_sidecar(profile, document_id: str) -> None:
 def _load_profile_sidecar(document_id: str):
     """Load a previously saved PaperProfile sidecar.  Returns None if absent."""
     from src.services.llm.paper_profile import PaperProfile
+
     path = _profile_sidecar_path(document_id)
     if not os.path.isfile(path):
         return None
@@ -75,7 +79,9 @@ def _load_profile_sidecar(document_id: str):
 
 def _profile_has_details(profile) -> bool:
     """Return True if the profile contains any typed paper-detail entries."""
-    return bool(profile) and any(getattr(profile, field_name, None) for field_name in _DETAIL_FIELDS)
+    return bool(profile) and any(
+        getattr(profile, field_name, None) for field_name in _DETAIL_FIELDS
+    )
 
 
 @dataclass
@@ -112,9 +118,11 @@ class IngestionResult:
     def skipped(self) -> int:
         return sum(1 for r in self.file_results if r.skipped)
 
+
 ProgressCallback = Callable[[int, int, str], None]
 
 _SUB_STEPS = 4
+
 
 class IngestionService:
     """Coordinate PDF → RAG chunks (and optionally the Neo4j knowledge graph)."""
@@ -130,8 +138,8 @@ class IngestionService:
         self._kg_writer = None
         if neo4j_conn is not None:
             from src.services.knowledge_graph.writer import KnowledgeGraphWriter
-            self._kg_writer = KnowledgeGraphWriter(neo4j_conn)
 
+            self._kg_writer = KnowledgeGraphWriter(neo4j_conn)
 
     def ingest_files(
         self,
@@ -182,7 +190,7 @@ class IngestionService:
                     on_progress(step_base + sub_step, total_steps, full_msg)
                 sub_step = min(sub_step + 1, _SUB_STEPS - 1)
 
-            hash_msg = f"[{idx+1}/{n_files}] Computing hash for {file_name}..."
+            hash_msg = f"[{idx + 1}/{n_files}] Computing hash for {file_name}..."
             print(f"\n{hash_msg}", flush=True)
             if on_progress:
                 on_progress(step_base, total_steps, hash_msg)
@@ -208,23 +216,24 @@ class IngestionService:
 
                 papers = self.store.list_papers(collection_name)
                 paper_meta = next(
-                    (p for p in papers if p["document_id"] == identity.document_id), None
+                    (p for p in papers if p["document_id"] == identity.document_id),
+                    None,
                 )
-                fr.paper_title = paper_meta["title"] if paper_meta else identity.document_id
+                fr.paper_title = (
+                    paper_meta["title"] if paper_meta else identity.document_id
+                )
                 fr.content_chunks = paper_meta["chunk_count"] if paper_meta else 0
 
                 kg_needs_write = False
                 if self._kg_writer is not None:
                     in_kg = self._kg_writer.is_paper_in_kg(identity.document_id)
-                    kg_needs_write = (
-                        not in_kg
-                        or (in_kg and not self._kg_writer.has_paper_details(identity.document_id))
+                    kg_needs_write = not in_kg or (
+                        in_kg
+                        and not self._kg_writer.has_paper_details(identity.document_id)
                     )
 
                 if self._kg_writer is not None and kg_needs_write:
-                    skip_msg = (
-                        f"[{idx+1}/{n_files}] RAG already indexed — writing KG for {file_name}"
-                    )
+                    skip_msg = f"[{idx + 1}/{n_files}] RAG already indexed — writing KG for {file_name}"
                     print(f"\n{skip_msg}", flush=True)
                     if on_progress:
                         on_progress(step_base + _SUB_STEPS, total_steps, skip_msg)
@@ -232,12 +241,16 @@ class IngestionService:
                         file_path, file_name, model, identity.document_id
                     )
                 else:
-                    skip_msg = f"[{idx+1}/{n_files}] Already indexed — skipping {file_name}"
+                    skip_msg = (
+                        f"[{idx + 1}/{n_files}] Already indexed — skipping {file_name}"
+                    )
                     print(f"\n{skip_msg}", flush=True)
                     if on_progress:
                         on_progress(step_base + _SUB_STEPS, total_steps, skip_msg)
                     if self._kg_writer is not None:
-                        fr.kg_indexed = self._kg_writer.is_paper_in_kg(identity.document_id)
+                        fr.kg_indexed = self._kg_writer.is_paper_in_kg(
+                            identity.document_id
+                        )
 
                 result.file_results.append(fr)
                 continue
@@ -249,7 +262,9 @@ class IngestionService:
             }
 
             proc_result = self._process_and_index(
-                file_path, collection_name, model,
+                file_path,
+                collection_name,
+                model,
                 extra_metadata=extra_metadata,
                 on_step=_step_cb,
             )
@@ -259,11 +274,15 @@ class IngestionService:
                 continue
 
             chunks, raw_result = proc_result
-            content_count = sum(1 for c in chunks if c.metadata.get("chunk_type") == "content")
+            content_count = sum(
+                1 for c in chunks if c.metadata.get("chunk_type") == "content"
+            )
             fr.success = True
             fr.paper_title = raw_result.get("paper_title", file_name)
             fr.content_chunks = content_count
-            fr.has_summary = any(c.metadata.get("chunk_type") == "summary" for c in chunks)
+            fr.has_summary = any(
+                c.metadata.get("chunk_type") == "summary" for c in chunks
+            )
 
             profile = raw_result.get("profile")
             if profile is not None:
@@ -276,7 +295,8 @@ class IngestionService:
                 except Exception as kg_exc:
                     logger.warning(
                         "KG indexing failed for %s (RAG indexing succeeded): %s",
-                        file_path, kg_exc,
+                        file_path,
+                        kg_exc,
                     )
 
             result.file_results.append(fr)
@@ -285,7 +305,6 @@ class IngestionService:
             on_progress(total_steps, total_steps, "Done!")
 
         return result
-
 
     def _process_and_index(
         self,
@@ -303,7 +322,10 @@ class IngestionService:
         """
         try:
             raw_result = self.processor.process(
-                file_path, model=model, extra_metadata=extra_metadata, on_step=on_step,
+                file_path,
+                model=model,
+                extra_metadata=extra_metadata,
+                on_step=on_step,
             )
             chunks = raw_result["chunks"]
             self.store.add_documents(chunks, collection_name=collection_name)
@@ -315,13 +337,25 @@ class IngestionService:
     def _link_cross_edges(self, profile, document_id: str, model: str | None) -> None:
         if model is None:
             return
-        for label, method_name in (("finding", "link_findings"), ("concept", "link_concepts")):
+        for label, method_name in (
+            ("finding", "link_findings"),
+            ("concept", "link_concepts"),
+        ):
             try:
-                n_links = getattr(self._kg_writer, method_name)(profile, document_id, model)
+                n_links = getattr(self._kg_writer, method_name)(
+                    profile, document_id, model
+                )
                 if n_links:
-                    logger.info("KG: wrote %d cross-%s edge(s) for %s", n_links, label, document_id)
+                    logger.info(
+                        "KG: wrote %d cross-%s edge(s) for %s",
+                        n_links,
+                        label,
+                        document_id,
+                    )
             except Exception as exc:
-                logger.warning("Cross-%s linking failed for %s: %s", label, document_id, exc)
+                logger.warning(
+                    "Cross-%s linking failed for %s: %s", label, document_id, exc
+                )
 
     def _write_kg_only(
         self,
@@ -372,6 +406,7 @@ class IngestionService:
                 return False
 
             from src.services.llm import extract_paper_profile, get_llm
+
             llm = get_llm(model=model, temperature=0.1, require_json=True)
             profile = extract_paper_profile(llm, markdown_text, file_name)
             if profile is None:
