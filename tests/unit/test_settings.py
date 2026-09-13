@@ -2,7 +2,11 @@
 
 import os
 
+import pytest
+
 from config.settings import Settings, configure_langsmith
+
+pytestmark = pytest.mark.unit
 
 
 

@@ -3,7 +3,11 @@
 import json
 import os
 
+import pytest
+
 from src.services.chat.store import ChatMetadata, ChatRecord, ChatStore
+
+pytestmark = pytest.mark.integration
 
 
 def _msgs():
