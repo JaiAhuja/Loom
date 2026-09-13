@@ -1,3 +1,4 @@
+/* ── Global ── */
 .stChatMessage { max-width: 100%; }
 .stChatMessage pre { border-radius: 8px; padding: 1rem; }
 .stChatMessage hr { margin: 1.5rem 0; border-color: rgba(128,128,128,0.2); }
@@ -7,6 +8,7 @@
 }
 .stChatMessage th { font-weight: 600; }
 
+/* ── Hero / Welcome ── */
 .hero-container {
     text-align: center;
     padding: 2.5rem 1rem 1rem;
@@ -34,6 +36,7 @@
     margin-bottom: 2rem;
 }
 
+/* ── Feature cards ── */
 .feature-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -57,6 +60,7 @@
 .feature-card .card-title { font-weight: 700; font-size: 0.95rem; margin-bottom: 0.25rem; }
 .feature-card .card-desc  { font-size: 0.8rem; color: #999; line-height: 1.35; }
 
+/* ── Quick-start pills ── */
 .quick-start { text-align: center; margin-top: 0.5rem; }
 .quick-start p { font-size: 0.85rem; color: #888; margin-bottom: 0.6rem; }
 .pill-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem; }
@@ -73,6 +77,7 @@
 }
 .pill:hover { background: rgba(102,126,234,0.18); }
 
+/* ── Status bar ── */
 .status-bar {
     display: flex;
     align-items: center;
@@ -95,6 +100,7 @@
     font-size: 0.78rem;
 }
 
+/* ── Sidebar polish ── */
 section[data-testid="stSidebar"] .stMarkdown h1 {
     font-size: 1.3rem !important;
 }

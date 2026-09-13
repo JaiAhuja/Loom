@@ -1,9 +1,9 @@
-"""Tests for src.services.ingestion.identity — document identity helpers."""
+"""Tests for src.ingestion.identity — document identity helpers."""
 
 import hashlib
 import os
 
-from src.services.ingestion.identity import (
+from src.ingestion.identity import (
     DocumentIdentity,
     DocumentIdentityError,
     build_identity,
@@ -15,6 +15,9 @@ from src.services.ingestion.identity import (
 )
 
 
+# ---------------------------------------------------------------------------
+# hash_bytes / compute_file_hash
+# ---------------------------------------------------------------------------
 
 def test_hash_bytes_deterministic():
     """Same bytes always produce the same hash."""
@@ -45,11 +48,17 @@ def test_compute_file_hash_missing_file_raises_contextual_error(tmp_path):
         assert "Unable to read file" in str(exc)
 
 
+# ---------------------------------------------------------------------------
+# make_document_id
+# ---------------------------------------------------------------------------
 
 def test_make_document_id():
     assert make_document_id("Self-Supervised Learning.pdf") == "Self-Supervised Learning"
 
 
+# ---------------------------------------------------------------------------
+# generate_ingest_id
+# ---------------------------------------------------------------------------
 
 def test_generate_ingest_id_unique():
     """Each call returns a different UUID."""
@@ -65,6 +74,9 @@ def test_generate_ingest_id_format():
     assert len(iid) == 36
 
 
+# ---------------------------------------------------------------------------
+# build_identity
+# ---------------------------------------------------------------------------
 
 def test_build_identity():
     data = b"my pdf bytes"
@@ -84,7 +96,9 @@ def test_build_identity_same_filename_same_document_id():
     data2 = b"content B"
     id1 = build_identity(data1, "paper.pdf", generate_ingest_id())
     id2 = build_identity(data2, "paper.pdf", generate_ingest_id())
+    # Same filename → same document_id
     assert id1.document_id == id2.document_id == "paper"
+    # But source_md5 and ingest_ids differ (file content and ingest run differ)
     assert id1.source_md5 != id2.source_md5
     assert id1.ingest_id != id2.ingest_id
 
@@ -95,10 +109,15 @@ def test_build_identity_different_filename_different_document_id():
     iid = generate_ingest_id()
     id1 = build_identity(data, "paper_a.pdf", iid)
     id2 = build_identity(data, "paper_b.pdf", iid)
+    # Different filename → different document_id
     assert id1.document_id != id2.document_id
+    # But source_md5 is the same (same content)
     assert id1.source_md5 == id2.source_md5
 
 
+# ---------------------------------------------------------------------------
+# save_upload — content-addressed storage
+# ---------------------------------------------------------------------------
 
 def test_save_upload_creates_file(tmp_path):
     data = b"some bytes"
@@ -141,7 +160,9 @@ def test_save_upload_different_filenames_same_hash(tmp_path):
     p1 = save_upload(data, id1, str(tmp_path))
     p2 = save_upload(data, id2, str(tmp_path))
 
+    # Same parent directory
     assert os.path.dirname(p1) == os.path.dirname(p2)
+    # Different filenames
     assert os.path.basename(p1) == "v1.pdf"
     assert os.path.basename(p2) == "v2.pdf"
 
@@ -159,6 +180,9 @@ def test_save_upload_rejects_hand_built_traversal_identity(tmp_path):
     assert os.path.commonpath([str(tmp_path), path]) == str(tmp_path)
 
 
+# ---------------------------------------------------------------------------
+# DocumentIdentity is frozen (immutable)
+# ---------------------------------------------------------------------------
 
 def test_document_identity_is_immutable():
     identity = build_identity(b"test", "f.pdf", generate_ingest_id())

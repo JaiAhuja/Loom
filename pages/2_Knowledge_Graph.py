@@ -1,18 +1,12 @@
-"""Render the interactive knowledge-graph exploration page.
-
-The page combines paper metadata from retrieval and graph storage, then
-provides graph visualization, paper and concept exploration, evidence
-inspection, and cross-paper relationship analysis through pre-built queries.
-"""
-
 import streamlit as st
 from pyvis.network import Network
 
 from src.domain import Paper
 from src.domain.paper import merge_paper_sources
-from src.services.knowledge_graph import KnowledgeGraphQueries, get_neo4j_connection
-from src.services.retrieval import VectorStoreManager
+from src.graph_db import KnowledgeGraphQueries, get_neo4j_connection
+from src.rag import VectorStoreManager
 
+# --- Page Configuration ---
 st.set_page_config(
     page_title="Knowledge Graph - Loom",
     page_icon="",
@@ -22,11 +16,13 @@ st.set_page_config(
 st.title("Knowledge Graph Explorer")
 st.caption("Visualize and explore relationships between your research papers")
 
+# --- Display persistent toggle state from main page ---
 rag_status = "✅ RAG Enabled" if st.session_state.get("use_rag_persistent", False) else "⚫ RAG Disabled"
 kg_status = "✅ KG Enabled" if st.session_state.get("use_graph_persistent", False) else "⚫ KG Disabled"
 st.info(f"**Toggle Status:** {rag_status} · {kg_status} (configure on main page)")
 
 
+# --- Neo4j Connection (shared singleton — same driver used by app.py) ---
 try:
     conn = get_neo4j_connection()
     if not conn.is_connected():
@@ -42,6 +38,7 @@ except Exception as e:
 
 queries = KnowledgeGraphQueries(conn)
 
+# --- Graph Statistics ---
 try:
     stats = queries.get_graph_stats()
 except Exception as e:
@@ -76,6 +73,7 @@ if stats.get("papers", 0) == 0:
     st.stop()
 
 
+# --- Unified Paper Listing (RAG ∪ KG, keyed by document_id) ---
 with st.expander("📚 All papers across stores (RAG ∪ KG)", expanded=False):
     try:
         vstore = VectorStoreManager()
@@ -122,6 +120,7 @@ with st.expander("📚 All papers across stores (RAG ∪ KG)", expanded=False):
     else:
         st.caption("No papers indexed yet.")
 
+# --- Tabs ---
 _tab_labels = [
     "🕸️ Graph View", "📄 Papers", "💡 Concepts", "🔗 Relationships",
 ]
@@ -129,10 +128,12 @@ _tab_labels = [
 _tabs = st.tabs(_tab_labels)
 tab_graph, tab_papers, tab_concepts, tab_relations = _tabs
 
+# --- Tab 1: Interactive Graph Visualization ---
 with tab_graph:
     st.subheader("Interactive Research Graph")
     st.caption("Papers (large nodes) connected to concepts, methods, findings, and typed paper-detail nodes.")
 
+    # ---- Filters (domains / papers / relationship types) ----
     with st.expander("🔧 Filters", expanded=False):
         _all_papers_for_filter = queries.get_all_papers()
         _all_concepts_for_filter = queries.get_all_concepts()
@@ -176,6 +177,7 @@ with tab_graph:
     if not graph_data["nodes"]:
         st.info("No graph data to display yet.")
     else:
+        # Build pyvis network
         net = Network(
             height="600px",
             width="100%",
@@ -190,6 +192,7 @@ with tab_graph:
             spring_strength=0.01,
         )
 
+        # Color map
         colors = {
             "paper": "#FF6B6B",
             "concept": "#4ECDC4",
@@ -217,9 +220,11 @@ with tab_graph:
                 dashes=edge.get("dashes", False),
             )
 
+        # Render to HTML and display
         html = net.generate_html()
         st.components.v1.html(html, height=620, scrolling=True)
 
+        # Legend
         st.markdown(
             """
             **Legend:** 🔴 Paper · 🟢 Concept · 🟡 Method ·
@@ -228,10 +233,12 @@ with tab_graph:
             """
         )
 
+        # ---- Interactive Node Details ----
         st.divider()
         st.subheader("📊 Node Details Inspector")
         st.caption("Select a paper node from the graph above to view its full details (concepts, methods, findings)")
         
+        # Dropdown to select a paper node for detailed view
         paper_nodes = [n for n in graph_data["nodes"] if n.get("group") == "paper"]
         if paper_nodes:
             def _format_paper_option(node):
@@ -247,14 +254,17 @@ with tab_graph:
             if selected_node:
                 doc_id = selected_node.get("doc_id")
                 if doc_id:
+                    # Fetch full details for this paper
                     details = queries.get_paper_details(document_id=doc_id)
                     
+                    # Display header with metadata
                     col1, col2, col3, col4 = st.columns(4)
                     col1.metric("💡 Concepts", len(details.get("concepts", [])))
                     col2.metric("⚙️ Methods", len(details.get("methods", [])))
                     col3.metric("🔬 Findings", len(details.get("findings", [])))
                     col4.metric("🧩 Details", len(details.get("details", [])))
                     
+                    # Display concepts, methods, findings in expandable sections
                     det_col1, det_col2 = st.columns(2)
                     
                     with det_col1:
@@ -313,6 +323,7 @@ with tab_graph:
                             else:
                                 st.caption("No findings found for this paper")
 
+# --- Tab 2: Paper Explorer ---
 with tab_papers:
     st.subheader("Paper Explorer")
 
@@ -320,6 +331,7 @@ with tab_papers:
     if not papers:
         st.info("No papers indexed yet.")
     else:
+        # Selector keyed by document_id (stable), labelled by title
         doc_ids = [p["document_id"] for p in papers]
 
         def _paper_label(doc_id):
@@ -335,6 +347,7 @@ with tab_papers:
         )
 
         if selected_doc_id:
+            # Paper metadata
             paper_meta = next(
                 (p for p in papers if p["document_id"] == selected_doc_id), {},
             )
@@ -351,6 +364,7 @@ with tab_papers:
 
             st.divider()
 
+            # Paper details (keyed by canonical document_id)
             details = queries.get_paper_details(document_id=selected_doc_id)
 
             det_col1, det_col2 = st.columns(2)
@@ -390,6 +404,7 @@ with tab_papers:
                     )
                     st.markdown(f"- {evidence_icon} {f['claim']}")
 
+            # ---- Per-paper delete (removes from KG + every Chroma collection) ----
             st.divider()
             del_col1, del_col2 = st.columns([1, 3])
             confirm_key = f"confirm_delete_{selected_doc_id}"
@@ -425,6 +440,7 @@ with tab_papers:
                         st.session_state.pop(confirm_key, None)
                         st.rerun()
 
+        # Compare two papers
         st.divider()
         st.markdown("### 🔀 Compare Two Papers")
         paper_titles = [p["title"] for p in papers]
@@ -450,6 +466,7 @@ with tab_papers:
         else:
             st.caption("Upload at least 2 papers to compare.")
 
+# --- Tab 3: Concept Explorer ---
 with tab_concepts:
     st.subheader("Concept Explorer")
 
@@ -457,6 +474,7 @@ with tab_concepts:
     if not concepts:
         st.info("No concepts extracted yet.")
     else:
+        # Concept table
         st.dataframe(
             [
                 {
@@ -471,6 +489,7 @@ with tab_concepts:
             hide_index=True,
         )
 
+        # Concept deep-dive
         st.divider()
         concept_names = [c["name"] for c in concepts]
         selected_concept = st.selectbox("Explore a concept", concept_names)
@@ -493,6 +512,7 @@ with tab_concepts:
                     bar = "█" * max(1, int(strength * 10))
                     st.markdown(f"- **{r['name']}** {bar} ({strength:.1f})")
 
+            # ---- Evidence across papers for this concept ----
             st.divider()
             st.markdown("### 📚 Evidence across papers for this concept")
             ev = queries.evidence_for_concept(selected_concept)
@@ -522,6 +542,7 @@ with tab_concepts:
                                 if item.get("reason"):
                                     st.caption(f"Reason: {item['reason']}")
 
+# --- Tab 4: Cross-Paper Relationships ---
 with tab_relations:
     st.subheader("Cross-Paper Relationships")
     st.caption("How findings from different papers relate to each other")
@@ -551,6 +572,7 @@ with tab_relations:
             else:
                 st.info(f"No {label} findings detected yet.")
 
+    # ---- F3: Conflict / Agreement matrix ----
     st.divider()
     st.markdown("### 🧮 Paper × Paper Agreement Matrix")
     st.caption(
