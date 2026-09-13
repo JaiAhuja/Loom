@@ -37,10 +37,7 @@ _DETAIL_FIELDS = (
 
 def _safe_sidecar_stem(document_id: str) -> str:
     """Return a path-safe sidecar stem for a document id."""
-    return (
-        os.path.basename(str(document_id or "document").replace("\\", "/"))
-        or "document"
-    )
+    return os.path.basename(str(document_id or "document").replace("\\", "/")) or "document"
 
 
 def _profile_sidecar_path(document_id: str) -> str:
@@ -79,9 +76,7 @@ def _load_profile_sidecar(document_id: str):
 
 def _profile_has_details(profile) -> bool:
     """Return True if the profile contains any typed paper-detail entries."""
-    return bool(profile) and any(
-        getattr(profile, field_name, None) for field_name in _DETAIL_FIELDS
-    )
+    return bool(profile) and any(getattr(profile, field_name, None) for field_name in _DETAIL_FIELDS)
 
 
 @dataclass
@@ -219,17 +214,14 @@ class IngestionService:
                     (p for p in papers if p["document_id"] == identity.document_id),
                     None,
                 )
-                fr.paper_title = (
-                    paper_meta["title"] if paper_meta else identity.document_id
-                )
+                fr.paper_title = paper_meta["title"] if paper_meta else identity.document_id
                 fr.content_chunks = paper_meta["chunk_count"] if paper_meta else 0
 
                 kg_needs_write = False
                 if self._kg_writer is not None:
                     in_kg = self._kg_writer.is_paper_in_kg(identity.document_id)
                     kg_needs_write = not in_kg or (
-                        in_kg
-                        and not self._kg_writer.has_paper_details(identity.document_id)
+                        in_kg and not self._kg_writer.has_paper_details(identity.document_id)
                     )
 
                 if self._kg_writer is not None and kg_needs_write:
@@ -237,20 +229,14 @@ class IngestionService:
                     print(f"\n{skip_msg}", flush=True)
                     if on_progress:
                         on_progress(step_base + _SUB_STEPS, total_steps, skip_msg)
-                    fr.kg_indexed = self._write_kg_only(
-                        file_path, file_name, model, identity.document_id
-                    )
+                    fr.kg_indexed = self._write_kg_only(file_path, file_name, model, identity.document_id)
                 else:
-                    skip_msg = (
-                        f"[{idx + 1}/{n_files}] Already indexed — skipping {file_name}"
-                    )
+                    skip_msg = f"[{idx + 1}/{n_files}] Already indexed — skipping {file_name}"
                     print(f"\n{skip_msg}", flush=True)
                     if on_progress:
                         on_progress(step_base + _SUB_STEPS, total_steps, skip_msg)
                     if self._kg_writer is not None:
-                        fr.kg_indexed = self._kg_writer.is_paper_in_kg(
-                            identity.document_id
-                        )
+                        fr.kg_indexed = self._kg_writer.is_paper_in_kg(identity.document_id)
 
                 result.file_results.append(fr)
                 continue
@@ -274,15 +260,11 @@ class IngestionService:
                 continue
 
             chunks, raw_result = proc_result
-            content_count = sum(
-                1 for c in chunks if c.metadata.get("chunk_type") == "content"
-            )
+            content_count = sum(1 for c in chunks if c.metadata.get("chunk_type") == "content")
             fr.success = True
             fr.paper_title = raw_result.get("paper_title", file_name)
             fr.content_chunks = content_count
-            fr.has_summary = any(
-                c.metadata.get("chunk_type") == "summary" for c in chunks
-            )
+            fr.has_summary = any(c.metadata.get("chunk_type") == "summary" for c in chunks)
 
             profile = raw_result.get("profile")
             if profile is not None:
@@ -342,9 +324,7 @@ class IngestionService:
             ("concept", "link_concepts"),
         ):
             try:
-                n_links = getattr(self._kg_writer, method_name)(
-                    profile, document_id, model
-                )
+                n_links = getattr(self._kg_writer, method_name)(profile, document_id, model)
                 if n_links:
                     logger.info(
                         "KG: wrote %d cross-%s edge(s) for %s",
@@ -353,9 +333,7 @@ class IngestionService:
                         document_id,
                     )
             except Exception as exc:
-                logger.warning(
-                    "Cross-%s linking failed for %s: %s", label, document_id, exc
-                )
+                logger.warning("Cross-%s linking failed for %s: %s", label, document_id, exc)
 
     def _write_kg_only(
         self,
@@ -378,9 +356,7 @@ class IngestionService:
 
         profile = _load_profile_sidecar(document_id)
 
-        should_reextract = profile is None or (
-            not _profile_has_details(profile) and model is not None
-        )
+        should_reextract = profile is None or (not _profile_has_details(profile) and model is not None)
         if should_reextract:
             if model is None:
                 logger.warning(

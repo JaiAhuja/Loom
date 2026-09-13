@@ -53,9 +53,7 @@ def parse_llm_json(response_text: str) -> dict | None:
                         cleaned_json = re.sub(r",\s*]", "]", cleaned_json)
                         return json.loads(cleaned_json)
                     except json.JSONDecodeError:
-                        return {
-                            "error": f"Failed to parse response as JSON: {json_str[:200]}..."
-                        }
+                        return {"error": f"Failed to parse response as JSON: {json_str[:200]}..."}
 
     try:
         return json.loads(response_text.strip())

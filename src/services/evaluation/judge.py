@@ -158,9 +158,7 @@ class RAGJudge:
         try:
             llm = get_llm(model=model, temperature=0.0, require_json=True)
             chain = _JUDGE_PROMPT | llm
-            response = chain.invoke(
-                {"query": query, "context": context, "answer": answer}
-            )
+            response = chain.invoke({"query": query, "context": context, "answer": answer})
             return _parse_result(response)
         except Exception as exc:
             logger.warning("RAG evaluation failed: %s", exc, exc_info=True)
@@ -177,9 +175,7 @@ class RAGJudge:
         try:
             llm = get_llm(model=model, temperature=0.0, require_json=True)
             chain = _JUDGE_PROMPT | llm
-            response = await chain.ainvoke(
-                {"query": query, "context": context, "answer": answer}
-            )
+            response = await chain.ainvoke({"query": query, "context": context, "answer": answer})
             return _parse_result(response, async_label=True)
         except Exception as exc:
             logger.warning("Async RAG evaluation failed: %s", exc, exc_info=True)

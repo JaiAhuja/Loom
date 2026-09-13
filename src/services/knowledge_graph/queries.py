@@ -66,9 +66,7 @@ OPTIONAL MATCH (m:{METHOD}) WITH papers, concepts, count(m) AS methods
 OPTIONAL MATCH (f:{FINDING}) WITH papers, concepts, methods, count(f) AS findings
 OPTIONAL MATCH (d:{DETAIL}) WITH papers, concepts, methods, findings, count(d) AS details
 RETURN papers, concepts, methods, findings, details"""
-_EMPTY_STATS = dict.fromkeys(
-    ("papers", "concepts", "methods", "findings", "details"), 0
-)
+_EMPTY_STATS = dict.fromkeys(("papers", "concepts", "methods", "findings", "details"), 0)
 
 
 class KnowledgeGraphQueries:
@@ -104,7 +102,8 @@ class KnowledgeGraphQueries:
     def get_shared_concepts(self, paper_a: str, paper_b: str) -> list[dict]:
         """Find concepts discussed by both papers."""
         return self.conn.execute_read(
-            f"""MATCH (p1:{PAPER} {{title: $a}})-[:{DISCUSSES}]->(c:{CONCEPT})<-[:{DISCUSSES}]-(p2:{PAPER} {{title: $b}})
+            f"""MATCH (p1:{PAPER} {{title: $a}})-[:{DISCUSSES}]->
+            (c:{CONCEPT})<-[:{DISCUSSES}]-(p2:{PAPER} {{title: $b}})
             RETURN c.name AS concept, c.description AS description, c.domain AS domain""",
             {"a": paper_a, "b": paper_b},
         )
@@ -113,9 +112,7 @@ class KnowledgeGraphQueries:
         """Get findings linked by CONTRADICTS/SUPPORTS/EXTENDS. rel_type is allow-listed."""
         allowed = {SUPPORTS, CONTRADICTS, EXTENDS}
         if rel_type not in allowed:
-            raise ValueError(
-                f"Unsupported rel_type {rel_type!r}; expected one of {sorted(allowed)}"
-            )
+            raise ValueError(f"Unsupported rel_type {rel_type!r}; expected one of {sorted(allowed)}")
         return self.conn.execute_read(
             f"""MATCH (f1:{FINDING})-[r:{rel_type}]->(f2:{FINDING})
             RETURN f1.claim AS finding_1, f1.paper_title AS paper_1,
@@ -284,9 +281,7 @@ class KnowledgeGraphQueries:
             paper_filters.append("p.domain IN $domains")
         if document_ids:
             paper_filters.append("p.document_id IN $document_ids")
-        paper_where_clause = (
-            (" WHERE " + " AND ".join(paper_filters)) if paper_filters else ""
-        )
+        paper_where_clause = (" WHERE " + " AND ".join(paper_filters)) if paper_filters else ""
 
         if _include(DISCUSSES):
             results = self.conn.execute_read(
@@ -348,9 +343,7 @@ class KnowledgeGraphQueries:
                             None,
                             [
                                 row.get("text") or "",
-                                f"Evidence: {row.get('evidence')}"
-                                if row.get("evidence")
-                                else "",
+                                f"Evidence: {row.get('evidence')}" if row.get("evidence") else "",
                             ],
                         )
                     ),
@@ -683,16 +676,14 @@ class KnowledgeGraphQueries:
             return {key: [] for key in _DETAIL_KEYS}
         params = {"key": document_id}
         results = await asyncio.gather(
-            *(
-                self.conn.aexecute_read(query, params)
-                for query in _PAPER_DETAILS_QUERIES
-            )
+            *(self.conn.aexecute_read(query, params) for query in _PAPER_DETAILS_QUERIES)
         )
         return dict(zip(_DETAIL_KEYS, results))
 
     async def aget_shared_concepts(self, paper_a: str, paper_b: str) -> list[dict]:
         return await self.conn.aexecute_read(
-            f"""MATCH (p1:{PAPER} {{title: $a}})-[:{DISCUSSES}]->(c:{CONCEPT})<-[:{DISCUSSES}]-(p2:{PAPER} {{title: $b}})
+            f"""MATCH (p1:{PAPER} {{title: $a}})-[:{DISCUSSES}]->
+            (c:{CONCEPT})<-[:{DISCUSSES}]-(p2:{PAPER} {{title: $b}})
             RETURN c.name AS concept, c.description AS description, c.domain AS domain""",
             {"a": paper_a, "b": paper_b},
         )
@@ -700,9 +691,7 @@ class KnowledgeGraphQueries:
     async def aget_cross_paper_findings(self, rel_type: str) -> list[dict]:
         allowed = {SUPPORTS, CONTRADICTS, EXTENDS}
         if rel_type not in allowed:
-            raise ValueError(
-                f"Unsupported rel_type {rel_type!r}; expected one of {sorted(allowed)}"
-            )
+            raise ValueError(f"Unsupported rel_type {rel_type!r}; expected one of {sorted(allowed)}")
         return await self.conn.aexecute_read(
             f"""MATCH (f1:{FINDING})-[r:{rel_type}]->(f2:{FINDING})
             RETURN f1.claim AS finding_1, f1.paper_title AS paper_1,
@@ -721,9 +710,7 @@ class KnowledgeGraphQueries:
         )
 
     async def aget_related_concepts(self, concept_name: str) -> list[dict]:
-        return await self.conn.aexecute_read(
-            _RELATED_CONCEPTS_QUERY, {"name": concept_name}
-        )
+        return await self.conn.aexecute_read(_RELATED_CONCEPTS_QUERY, {"name": concept_name})
 
     async def aget_graph_stats(self) -> dict:
         result = await self.conn.aexecute_read(_STATS_QUERY)

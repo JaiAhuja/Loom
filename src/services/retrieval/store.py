@@ -50,9 +50,7 @@ class VectorStoreManager:
         os.makedirs(collection_dir, exist_ok=True)
         return collection_dir
 
-    def _get_client_for_collection(
-        self, collection_name: str
-    ) -> chromadb.PersistentClient:
+    def _get_client_for_collection(self, collection_name: str) -> chromadb.PersistentClient:
         """Get or create a ChromaDB PersistentClient for the given collection."""
         if collection_name not in self._clients:
             persist_dir = self._get_collection_persist_dir(collection_name)
@@ -217,9 +215,7 @@ class VectorStoreManager:
             return sorted(
                 entry
                 for entry in os.listdir(self.base_persist_dir)
-                if os.path.isfile(
-                    os.path.join(self.base_persist_dir, entry, "chroma.sqlite3")
-                )
+                if os.path.isfile(os.path.join(self.base_persist_dir, entry, "chroma.sqlite3"))
             )
         except Exception:
             logger.debug("Failed to list collections", exc_info=True)
@@ -230,9 +226,7 @@ class VectorStoreManager:
         try:
             client = self._get_client_for_collection(collection_name)
             collection = client.get_collection(collection_name)
-            results = collection.get(
-                where={"document_id": document_id}, limit=1, include=[]
-            )
+            results = collection.get(where={"document_id": document_id}, limit=1, include=[])
             return bool(results.get("ids"))
         except Exception:
             logger.debug(
@@ -257,9 +251,7 @@ class VectorStoreManager:
             collection = client.get_collection(collection_name)
             return collection.count()
         except Exception:
-            logger.debug(
-                "Failed to get count for collection %s", collection_name, exc_info=True
-            )
+            logger.debug("Failed to get count for collection %s", collection_name, exc_info=True)
             return 0
 
     def delete_collection(self, collection_name: str) -> None:
@@ -280,9 +272,7 @@ class VectorStoreManager:
                 shutil.rmtree(collection_dir)
                 logger.debug("Deleted collection directory: %s", collection_dir)
             except Exception as e:
-                logger.debug(
-                    "Failed to delete collection directory %s: %s", collection_dir, e
-                )
+                logger.debug("Failed to delete collection directory %s: %s", collection_dir, e)
         self._clients.pop(collection_name, None)
 
     def delete_paper(self, collection_name: str, document_id: str) -> int:

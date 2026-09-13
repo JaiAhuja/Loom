@@ -83,11 +83,7 @@ def _normalise_messages(messages: Any) -> list[dict]:
 
 
 def _normalise_message(msg: dict) -> dict:
-    role = (
-        msg.get("role")
-        if msg.get("role") in {"user", "assistant", "system", "tool"}
-        else "assistant"
-    )
+    role = msg.get("role") if msg.get("role") in {"user", "assistant", "system", "tool"} else "assistant"
     content = msg.get("content")
     return {"role": role, "content": content if isinstance(content, str) else ""}
 
@@ -101,9 +97,7 @@ def _record_payload(record: ChatRecord) -> dict:
     }
 
 
-def _entry(
-    name: str, path: str, topic: str, kind: str, metadata: dict | None = None
-) -> dict:
+def _entry(name: str, path: str, topic: str, kind: str, metadata: dict | None = None) -> dict:
     return {
         "filename": name,
         "path": path,
@@ -169,9 +163,7 @@ class ChatStore:
         else:
             topic = _topic_from_messages(messages)
             saved_at = now.strftime("%Y-%m-%d %H:%M:%S")
-            path = self._path_for(
-                f"{now.strftime('%Y%m%d-%H%M%S')}-{_slugify(topic)}.json"
-            )
+            path = self._path_for(f"{now.strftime('%Y%m%d-%H%M%S')}-{_slugify(topic)}.json")
         self._write_record(
             path,
             ChatRecord(
@@ -236,16 +228,10 @@ class ChatStore:
                         metadata = {}
                     entries.append(_entry(name, path, topic, "json", metadata))
                 except (OSError, json.JSONDecodeError):
-                    logger.debug(
-                        "Skipping unreadable chat history file: %s", path, exc_info=True
-                    )
+                    logger.debug("Skipping unreadable chat history file: %s", path, exc_info=True)
                     continue
             elif name.endswith(".md"):
-                entries.append(
-                    _entry(
-                        name, path, os.path.splitext(name)[0].replace("-", " "), "md"
-                    )
-                )
+                entries.append(_entry(name, path, os.path.splitext(name)[0].replace("-", " "), "md"))
 
         entries.sort(key=lambda e: e["modified"], reverse=True)
         return entries

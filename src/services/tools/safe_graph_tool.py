@@ -163,13 +163,9 @@ def _format_paper_details(data: dict) -> str:
                     f"  - {item.get('name', '?')} ({item.get('depth', '')}): {item.get('description', '')}"
                 )
             elif section == "methods":
-                lines.append(
-                    f"  - {item.get('name', '?')}: {item.get('description', '')}"
-                )
+                lines.append(f"  - {item.get('name', '?')}: {item.get('description', '')}")
             else:
-                lines.append(
-                    f"  - [{item.get('evidence_type', '')}] {item.get('claim', '')}"
-                )
+                lines.append(f"  - [{item.get('evidence_type', '')}] {item.get('claim', '')}")
     return "\n".join(lines)
 
 
@@ -204,7 +200,9 @@ _FORMATTERS: dict[str, Any] = {
         d,
         "Papers in the graph",
         "No papers in the knowledge graph.",
-        lambda p: f"- {p.get('title', 'Untitled')} [{p.get('domain', '')}] ({p.get('concept_count', 0)} concepts)",
+        lambda p: (
+            f"- {p.get('title', 'Untitled')} [{p.get('domain', '')}] ({p.get('concept_count', 0)} concepts)"
+        ),
     ),
     "paper_details": _format_paper_details,
     "shared_concepts": lambda d: _format_list(

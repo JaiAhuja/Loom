@@ -44,9 +44,7 @@ def _build_granite_tokenizer():
             return self._hf_tokenizer
 
         def __call__(self, text: str):
-            return self._hf_tokenizer(
-                text, return_tensors="pt", add_special_tokens=False
-            )
+            return self._hf_tokenizer(text, return_tensors="pt", add_special_tokens=False)
 
         def encode(self, text: str) -> list[int]:
             return self._hf_tokenizer.encode(text, add_special_tokens=False)
@@ -245,9 +243,7 @@ class DocumentProcessor:
                 doc.metadata.update(extra_metadata)
 
         for doc in enriched:
-            doc_id = doc.metadata.get(
-                "document_id", doc.metadata.get("source", file_name)
-            )
+            doc_id = doc.metadata.get("document_id", doc.metadata.get("source", file_name))
             chunk_label = doc.metadata.get("paper_chunk", "unknown")
             doc.metadata["chunk_id"] = self.generate_chunk_id(doc_id, chunk_label)
 

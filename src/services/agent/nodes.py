@@ -3,7 +3,8 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from src.services.agent.state import AgentState
 
 
-SYSTEM_PROMPT_BASE = """You are **Loom -- Weaving Threads of Knowledge Together**, an expert tutor specialized in \
+SYSTEM_PROMPT_BASE = """You are **Loom -- Weaving Threads of Knowledge Together**, an expert tutor
+specialized in \
 Data Engineering, Data Science, and Artificial Intelligence. Your mission is to help \
 users deeply understand, revise, and master concepts in these domains.
 
