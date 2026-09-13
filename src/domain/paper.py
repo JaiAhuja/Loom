@@ -11,7 +11,7 @@ joins.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
@@ -105,7 +105,6 @@ def merge_paper_sources(
         })
         entry["in_kg"] = True
         entry["concept_count"] = k.get("concept_count", 0)
-        # Prefer KG-derived title/domain when RAG side is missing them
         if not entry.get("title"):
             entry["title"] = k.get("title", doc_id)
         if not entry.get("domain"):

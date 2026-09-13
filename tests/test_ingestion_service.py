@@ -1,14 +1,11 @@
-"""Tests for src.ingestion.service — no Streamlit dependency."""
+"""Tests for src.services.ingestion.service — no Streamlit dependency."""
 
 import re
 from unittest.mock import MagicMock
 
-from src.ingestion.service import FileResult, IngestionResult, IngestionService
+from src.services.ingestion.service import FileResult, IngestionResult, IngestionService
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 def _make_chunk(chunk_type="content", paper="Test Paper"):
     """Return a mock LangChain Document with typical metadata."""
@@ -46,9 +43,6 @@ def _fake_store(already_indexed: bool = False):
     return store
 
 
-# ---------------------------------------------------------------------------
-# IngestionResult dataclass
-# ---------------------------------------------------------------------------
 
 def test_ingestion_result_counts():
     """succeeded / failed / skipped properties compute correctly."""
@@ -65,9 +59,6 @@ def test_ingestion_result_counts():
     assert res.skipped == 1
 
 
-# ---------------------------------------------------------------------------
-# ingest_files — RAG-only path (no KG extractor)
-# ---------------------------------------------------------------------------
 
 def test_ingest_single_file_rag_only(tmp_path):
     """A single PDF is processed and indexed; results are recorded."""
@@ -86,7 +77,6 @@ def test_ingest_single_file_rag_only(tmp_path):
 
     assert result.succeeded == 1
     assert result.failed == 0
-    # ingest_id is a UUID on the result
     assert re.match(r"^[0-9a-f-]{36}$", result.ingest_id)
 
     fr = result.file_results[0]
@@ -95,13 +85,11 @@ def test_ingest_single_file_rag_only(tmp_path):
     assert fr.content_chunks == 2
     assert fr.has_summary is True
 
-    # Identity fields
     assert fr.identity is not None
-    assert not fr.identity.document_id.startswith("md5:")  # Now filename-based
+    assert not fr.identity.document_id.startswith("md5:")
     assert fr.identity.ingest_id == result.ingest_id
     assert fr.identity.original_filename == "paper.pdf"
 
-    # Processor receives extra_metadata with identity keys
     proc.process.assert_called_once()
     _, kwargs = proc.process.call_args
     assert kwargs["model"] == "llama3.2"
@@ -127,7 +115,6 @@ def test_ingest_multiple_files(tmp_path):
     assert result.succeeded == 3
     assert len(result.file_results) == 3
 
-    # All files share the batch ingest_id
     for fr in result.file_results:
         assert fr.identity is not None
         assert fr.identity.ingest_id == result.ingest_id
@@ -150,9 +137,6 @@ def test_ingest_processor_failure(tmp_path):
     assert fr.error is not None
 
 
-# ---------------------------------------------------------------------------
-# Progress callback
-# ---------------------------------------------------------------------------
 
 def test_progress_callback_called(tmp_path):
     """The on_progress callback is invoked for each step."""
@@ -171,14 +155,10 @@ def test_progress_callback_called(tmp_path):
         on_progress=recorder,
     )
 
-    # hash step (step 0) + up to 3 sub-steps + final "Done!" — at minimum 2 calls
     assert len(calls) >= 2
     assert calls[-1][2] == "Done!"
 
 
-# ---------------------------------------------------------------------------
-# Default collection name
-# ---------------------------------------------------------------------------
 
 def test_default_collection_name(tmp_path):
     """When collection_name is omitted, 'default' is used."""
@@ -194,9 +174,6 @@ def test_default_collection_name(tmp_path):
     assert kwargs["collection_name"] == "default"
 
 
-# ---------------------------------------------------------------------------
-# Already-indexed skip
-# ---------------------------------------------------------------------------
 
 def test_already_indexed_skips_all_processing(tmp_path):
     """When is_document_indexed returns True, no processing or storing occurs."""
@@ -217,6 +194,5 @@ def test_already_indexed_skips_all_processing(tmp_path):
     assert fr.skipped is True
     assert fr.success is True
 
-    # Expensive steps must NOT have run
     proc.process.assert_not_called()
     store.add_documents.assert_not_called()
