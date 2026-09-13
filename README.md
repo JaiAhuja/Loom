@@ -227,10 +227,11 @@ loom/
 ├── README.md
 ├── requirements.txt
 ├── pytest.ini
-├── app.py                    # Streamlit application entry point
+├── app.py                    # Streamlit multipage navigation entry point
 ├── granite_tokenizer/        # Local Granite tokenizer files (HybridChunker)
 │
 ├── pages/
+│   ├── 1_Chat.py             # Main chat interface
 │   ├── 2_Knowledge_Graph.py  # Knowledge Graph explorer page
 │   └── 3_Chat_History.py     # Saved chat history viewer
 │
@@ -429,7 +430,7 @@ def _gather_tools(self, ...):
     return tools
 ```
 
-3. Add a toggle in the Streamlit sidebar (`app.py`).
+3. Add a toggle in the Streamlit sidebar (`pages/1_Chat.py`).
 
 ### Adding a New Document Loader
 
