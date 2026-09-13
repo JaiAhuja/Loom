@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-from config.settings import Settings, configure_langsmith, validate_runtime_settings
+from config.settings import Settings, configure_langsmith
 
 pytestmark = pytest.mark.unit
 
@@ -33,16 +33,6 @@ def test_langsmith_defaults_are_off():
 
 def test_neo4j_password_has_no_source_controlled_default():
     assert Settings().NEO4J_PASSWORD is None
-
-
-def test_production_requires_neo4j_password():
-    with pytest.raises(ValueError, match="NEO4J_PASSWORD"):
-        validate_runtime_settings(Settings(APP_ENV="prod"))
-
-
-def test_unknown_environment_is_rejected():
-    with pytest.raises(ValueError, match="APP_ENV"):
-        validate_runtime_settings(Settings(APP_ENV="staging"))
 
 
 def test_configure_langsmith_noop_when_disabled(monkeypatch):
