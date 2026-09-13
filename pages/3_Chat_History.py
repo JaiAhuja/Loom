@@ -100,7 +100,7 @@ with col_resume:
             st.session_state["_resumed_from"] = selected_entry["filename"]
             st.success("Conversation loaded - switching to chat...")
             try:
-                st.switch_page("app.py")
+                st.switch_page("pages/1_Chat.py")
             except Exception:
                 st.info("Open the main chat page to continue.")
     else:

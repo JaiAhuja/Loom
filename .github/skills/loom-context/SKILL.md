@@ -31,14 +31,15 @@ If the task is *purely* a one-line bug fix or doc typo, you may skip the propaga
 - Embeddings: `qwen3-embedding:4b` (Ollama)
 
 **Entry points**:
-- `app.py` — Streamlit chat page (main entry: `streamlit run app.py`)
+- `app.py` — Streamlit multipage navigation entry point (run with `streamlit run app.py`)
+- `pages/1_Chat.py` — main chat page
 - `pages/2_Knowledge_Graph.py` — KG explorer (Pyvis viz, paper/concept browsers)
 - `pages/3_Chat_History.py` — saved chat viewer
 
 ## Architecture Map (must-know)
 
 ```
-Streamlit UI (app.py + pages/)
+Streamlit UI (app.py router + pages/)
         │
         ▼
 LangGraph ReAct agent (src/graph/{state,nodes,builder}.py)
