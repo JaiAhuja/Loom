@@ -35,6 +35,22 @@ def test_neo4j_password_has_no_source_controlled_default():
     assert Settings().NEO4J_PASSWORD is None
 
 
+def test_settings_reject_unknown_keys():
+    with pytest.raises(ValueError):
+        Settings(OLLAMA_MODELL="typo")
+
+
+def test_runtime_validation_is_feature_scoped():
+    Settings(NEO4J_PASSWORD=None).validate_runtime(require_ollama=True)
+    with pytest.raises(ValueError, match="NEO4J_PASSWORD"):
+        Settings(NEO4J_PASSWORD=None).validate_runtime(require_neo4j=True)
+
+
+def test_invalid_retrieval_bounds_are_rejected():
+    with pytest.raises(ValueError, match="RAG_FETCH_K"):
+        Settings(RAG_TOP_K=10, RAG_FETCH_K=5)
+
+
 def test_configure_langsmith_noop_when_disabled(monkeypatch):
     """configure_langsmith returns False when tracing is off (the default)."""
     monkeypatch.setattr("config.settings.settings.LANGSMITH_TRACING", False)

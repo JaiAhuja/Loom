@@ -15,11 +15,37 @@ from pathlib import Path
 
 
 _SAFE_FILENAME_RE = re.compile(r"[^A-Za-z0-9._\- ]+")
+_DOCUMENT_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._\- ]{0,199}\Z")
+_CHUNK_ID_RE = re.compile(r"[0-9a-f]{32}\Z")
 _MAX_FILENAME_LEN = 200
 
 
 class DocumentIdentityError(RuntimeError):
     """Raised when document identity or upload storage cannot be completed."""
+
+
+def validate_document_id(document_id: str) -> str:
+    """Validate and return the canonical cross-store document identity."""
+    if not isinstance(document_id, str) or not _DOCUMENT_ID_RE.fullmatch(document_id):
+        raise ValueError(
+            "document_id must be 1-200 characters and contain only letters, numbers, '.', '-', '_', or spaces"
+        )
+    return document_id
+
+
+def validate_chunk_id(chunk_id: str) -> str:
+    """Validate a deterministic content chunk ID."""
+    if not isinstance(chunk_id, str) or not _CHUNK_ID_RE.fullmatch(chunk_id):
+        raise ValueError("chunk_id must be a 32-character lowercase hexadecimal ID")
+    return chunk_id
+
+
+def make_chunk_id(document_id: str, chunk_label: str) -> str:
+    """Create the canonical deterministic ID for one document chunk."""
+    validate_document_id(document_id)
+    if not isinstance(chunk_label, str) or not chunk_label.strip():
+        raise ValueError("chunk label must be non-empty")
+    return hashlib.md5(f"{document_id}:{chunk_label}".encode(), usedforsecurity=False).hexdigest()
 
 
 def _sanitize_filename(name: str) -> str:
@@ -65,7 +91,7 @@ def make_document_id(original_filename: str) -> str:
     """Derive a document ID from the filename (no extension)."""
     safe_name = _sanitize_filename(original_filename)
     name_without_ext = os.path.splitext(safe_name)[0]
-    return name_without_ext or "document"
+    return validate_document_id(name_without_ext or "document")
 
 
 def build_identity(file_bytes: bytes, original_filename: str, ingest_id: str) -> DocumentIdentity:

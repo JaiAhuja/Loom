@@ -9,7 +9,6 @@ from config.settings import configure_langsmith, settings
 from src.services.chat import ChatMetadata, ChatStore
 from src.services.evaluation import RAGJudge
 from src.services.agent import GraphBuilder
-from src.services.knowledge_graph import get_neo4j_connection
 from src.services.ingestion import IngestionService
 from src.services.ingestion.identity import (
     build_identity,
@@ -19,6 +18,7 @@ from src.services.ingestion.identity import (
 from src.services.ui.bootstrap import (
     check_neo4j_status,
     check_ollama_status,
+    get_neo4j_connection,
     get_document_processor,
     get_vector_store,
 )

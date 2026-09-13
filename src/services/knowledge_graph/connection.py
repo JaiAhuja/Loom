@@ -1,4 +1,3 @@
-import atexit
 import logging
 import threading
 
@@ -207,37 +206,11 @@ class Neo4jConnection:
             logger.debug("Failed to close async Neo4j driver", exc_info=True)
 
 
-_shared_connection: "Neo4jConnection | None" = None
-_shared_connection_lock = threading.RLock()
-
-
-def get_neo4j_connection() -> Neo4jConnection:
-    """Return the legacy process-wide connection.
-
-    Prefer ``create_neo4j_connection`` and pass the resulting instance to the
-    service that owns it. This adapter remains for Streamlit compatibility.
-    """
-    global _shared_connection
-    if _shared_connection is None:
-        with _shared_connection_lock:
-            if _shared_connection is None:
-                _shared_connection = Neo4jConnection()
-                atexit.register(reset_neo4j_connection)
-    return _shared_connection
-
-
 def create_neo4j_connection(**kwargs) -> Neo4jConnection:
-    """Create an explicitly owned Neo4j connection for one app/session scope."""
+    """Create an explicitly owned Neo4j connection.
+
+    The caller owns the returned service and decides whether it is shared by
+    an app, session, request, or background job. No process-global connection
+    is kept here.
+    """
     return Neo4jConnection(**kwargs)
-
-
-def reset_neo4j_connection() -> None:
-    """Close and clear the singleton (primarily for tests)."""
-    global _shared_connection
-    with _shared_connection_lock:
-        if _shared_connection is not None:
-            try:
-                _shared_connection.close()
-            except Exception:
-                logger.debug("Failed to reset Neo4j singleton", exc_info=True)
-            _shared_connection = None

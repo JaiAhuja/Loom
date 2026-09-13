@@ -1,5 +1,9 @@
+import json
+
+from langchain_core.messages import AIMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
+from config.settings import settings
 from src.services.agent.state import AgentState
 
 
@@ -36,8 +40,23 @@ def build_system_prompt(use_rag: bool = False, use_graph: bool = False) -> str:
     return prompt
 
 
-def create_agent_node(llm, tools: list, system_prompt: str):
+def _tool_call_signature(tool_calls: list[dict]) -> str:
+    """Return a stable signature used to detect repeated model tool calls."""
+    normalized = [{"name": call.get("name"), "args": call.get("args", {})} for call in tool_calls]
+    return json.dumps(normalized, sort_keys=True, default=str)
+
+
+def create_agent_node(
+    llm,
+    tools: list,
+    system_prompt: str,
+    max_tool_iterations: int | None = None,
+):
     """Create the agent node with an explicit tool set and prompt."""
+    if max_tool_iterations is None:
+        max_tool_iterations = settings.AGENT_MAX_TOOL_ITERATIONS
+    if max_tool_iterations < 1:
+        raise ValueError("max_tool_iterations must be positive")
     llm_with_tools = llm.bind_tools(tools) if tools else llm
     prompt = ChatPromptTemplate.from_messages(
         [("system", system_prompt), MessagesPlaceholder(variable_name="messages")]
@@ -46,15 +65,51 @@ def create_agent_node(llm, tools: list, system_prompt: str):
 
     def agent_node(state: AgentState) -> dict:
         messages = state.get("messages") or []
-        return {"messages": [chain.invoke({"messages": messages})]}
+        iterations = state.get("tool_iterations", 0)
+        if iterations >= max_tool_iterations:
+            return {
+                "messages": [
+                    AIMessage(
+                        content=(
+                            "I stopped tool use after reaching the safety limit. "
+                            "Please refine the question and try again."
+                        )
+                    )
+                ]
+            }
+
+        response = chain.invoke({"messages": messages})
+        tool_calls = getattr(response, "tool_calls", None) or []
+        if not tool_calls:
+            return {"messages": [response]}
+
+        signature = _tool_call_signature(tool_calls)
+        seen_signatures = state.get("tool_call_signatures", [])
+        if signature in seen_signatures:
+            return {
+                "messages": [
+                    AIMessage(
+                        content="I stopped because the same tool request was repeated without new progress."
+                    )
+                ]
+            }
+        return {
+            "messages": [response],
+            "tool_iterations": iterations + 1,
+            "tool_call_signatures": [*seen_signatures, signature],
+        }
 
     return agent_node
 
 
-def should_continue(state: AgentState) -> str:
+def should_continue(state: AgentState, max_tool_iterations: int | None = None) -> str:
     """Route to tools only when the model explicitly requested a tool call."""
+    if max_tool_iterations is None:
+        max_tool_iterations = settings.AGENT_MAX_TOOL_ITERATIONS
     messages = state.get("messages") or []
     if not messages:
         return "end"
     last_message = messages[-1]
+    if state.get("tool_iterations", 0) >= max_tool_iterations:
+        return "end"
     return "tools" if getattr(last_message, "tool_calls", None) else "end"

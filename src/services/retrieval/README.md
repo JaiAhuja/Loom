@@ -9,7 +9,8 @@ for the chat and knowledge-graph pages.
 - `DocumentProcessor` — converts PDFs through Docling, chunks the resulting
   Markdown, and creates deterministic chunk IDs.
 - `VectorStoreManager` — manages ChromaDB collections, adds documents, creates
-  retrievers, lists papers, and removes collections or papers.
+  retrievers, lists papers, and removes collections or papers. It requires
+  canonical document/chunk IDs and exposes explicit legacy metadata migration.
 
 Embeddings come from the `llm` service. The configured local Granite tokenizer
 is used by the chunking path; it must remain available at runtime. Reuse the

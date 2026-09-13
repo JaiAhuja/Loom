@@ -156,6 +156,8 @@ All settings are read from `.env` through `config/settings.py`.
 | `CHROMA_PERSIST_DIR` | `./data/chroma_db` | ChromaDB storage path |
 | `OUTPUT_DIR` | `./outputs` | Markdown export directory |
 | `RAG_TOP_K` | `5` | Retrieved chunks per query |
+| `RAG_MAX_QUERY_LENGTH` | `4000` | Maximum RAG query length |
+| `AGENT_MAX_TOOL_ITERATIONS` | `4` | Maximum tool-use cycles per answer |
 | `NEO4J_URI` | `bolt://127.0.0.1:7687` | Neo4j connection URI |
 | `NEO4J_USERNAME` | `neo4j` | Neo4j username |
 | `NEO4J_PASSWORD` | unset | Required before creating a Neo4j connection |

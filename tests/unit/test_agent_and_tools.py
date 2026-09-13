@@ -8,11 +8,13 @@ import pytest
 pytest.importorskip("langchain_core")
 
 from langchain_core.documents import Document
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.runnables import RunnableLambda
 
-from src.services.agent.nodes import build_system_prompt, should_continue
+from src.services.agent.nodes import build_system_prompt, create_agent_node, should_continue
 from src.services.agent.builder import GraphBuilder
 from src.services.knowledge_graph.service import GraphQueryService
+from src.services.retrieval.store import VectorStoreManager
 from src.services.tools.rag_tool import (
     _format_doc_result,
     _format_search,
@@ -82,12 +84,48 @@ def test_rag_tool_uses_the_bound_retriever_for_sync_and_async_queries():
 
 
 def test_rag_tool_rejects_empty_queries_without_touching_the_store():
-    class Store:
-        def get_retriever(self, **kwargs):
-            raise AssertionError("retriever should not be created for an empty query")
+    store = object.__new__(VectorStoreManager)
+    store.get_retriever = lambda **kwargs: (_ for _ in ()).throw(
+        AssertionError("retriever should not be created for an empty query")
+    )
 
-    tool = create_rag_tool("notes", store=Store())
-    assert "requires a non-empty query" in tool.invoke({"query": "  "})
+    tool = create_rag_tool("notes", store=store)
+    assert "query must be non-empty" in tool.invoke({"query": "  "})
+
+
+def test_agent_routing_stops_at_tool_iteration_limit():
+    message = AIMessage(
+        content="",
+        tool_calls=[{"name": "x", "args": {}, "id": "1", "type": "tool_call"}],
+    )
+    assert should_continue({"messages": [message], "tool_iterations": 4}) == "end"
+
+
+def test_agent_stops_when_model_repeats_the_same_tool_call():
+    tool_call = {"name": "x", "args": {}, "id": "1", "type": "tool_call"}
+
+    class RepeatingModel:
+        def bind_tools(self, tools):
+            return RunnableLambda(lambda _: AIMessage(content="", tool_calls=[tool_call]))
+
+    node = create_agent_node(RepeatingModel(), [object()], "Answer the question.")
+    first = node({"messages": [HumanMessage(content="question")]})
+    second = node(
+        {
+            "messages": [
+                *first["messages"],
+                ToolMessage(content="no useful result", tool_call_id="1"),
+            ],
+            "tool_iterations": first["tool_iterations"],
+            "tool_call_signatures": first["tool_call_signatures"],
+        }
+    )
+    assert "same tool request" in second["messages"][0].content
+
+
+def test_rag_tool_requires_explicit_store():
+    with pytest.raises(TypeError, match="retrieval service"):
+        create_rag_tool("notes", store=object())
 
 
 def test_builder_fails_fast_when_enabled_dependencies_are_missing():
@@ -102,6 +140,8 @@ def test_builder_fails_fast_when_enabled_dependencies_are_missing():
         assert False, "Graph without a connection must fail"
     except ValueError as exc:
         assert "neo4j_conn" in str(exc)
+    with pytest.raises(ValueError, match="vector_store"):
+        builder._gather_tools(use_rag=True, use_graph=False, collection_name="notes")
 
 
 def test_graph_service_validates_intents_and_dispatches_to_queries():

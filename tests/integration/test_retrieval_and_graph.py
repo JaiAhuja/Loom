@@ -51,6 +51,10 @@ class FakeCollection:
         for row_id in ids:
             self.rows.pop(row_id, None)
 
+    def update(self, ids, metadatas):
+        for row_id, metadata in zip(ids, metadatas):
+            self.rows[row_id]["metadata"] = metadata
+
 
 class FakeClient:
     def __init__(self):
@@ -80,7 +84,7 @@ def test_vector_store_persists_and_manages_document_metadata(monkeypatch, tmp_pa
         Document(
             "summary",
             {
-                "chunk_id": "one",
+                "chunk_id": DocumentProcessor.generate_chunk_id("paper", "summary"),
                 "document_id": "paper",
                 "paper": "Paper",
                 "domain": "AI",
@@ -89,7 +93,7 @@ def test_vector_store_persists_and_manages_document_metadata(monkeypatch, tmp_pa
         Document(
             "body",
             {
-                "chunk_id": "two",
+                "chunk_id": DocumentProcessor.generate_chunk_id("paper", "chunk_001"),
                 "document_id": "paper",
                 "paper": "Paper",
                 "domain": "AI",
@@ -116,6 +120,28 @@ def test_vector_store_persists_and_manages_document_metadata(monkeypatch, tmp_pa
     assert store.is_document_indexed("notes", "paper") is True
     assert store.delete_paper("notes", "paper") == 2
     assert store.get_collection_count("notes") == 0
+
+
+def test_vector_store_requires_canonical_identity_and_supports_explicit_legacy_migration(
+    monkeypatch, tmp_path
+):
+    client = FakeClient()
+    monkeypatch.setattr("src.services.retrieval.store.chromadb.PersistentClient", lambda path: client)
+    store = VectorStoreManager(persist_dir=str(tmp_path))
+    store._embeddings = FakeEmbeddings()
+    with pytest.raises(ValueError, match="canonical document_id"):
+        store.add_documents([Document("legacy", {"paper": "Paper"})], collection_name="notes")
+
+    collection = client.get_or_create_collection("notes")
+    collection.upsert(
+        ids=["legacy-row"],
+        documents=["legacy"],
+        metadatas=[{"paper": "Paper", "paper_chunk": "chunk_001"}],
+        embeddings=[[1.0]],
+    )
+    assert store.list_papers("notes") == []
+    assert store.migrate_legacy_metadata("notes", {"Paper": "paper"}) == 1
+    assert store.list_papers("notes")[0]["document_id"] == "paper"
 
 
 def test_document_processor_builds_summary_and_deterministic_chunks(monkeypatch, tmp_path):

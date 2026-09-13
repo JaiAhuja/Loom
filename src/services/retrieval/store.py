@@ -1,4 +1,3 @@
-import hashlib
 import logging
 import re
 
@@ -7,6 +6,7 @@ from langchain_chroma import Chroma
 from langchain_core.documents import Document
 
 from config.settings import settings
+from src.services.ingestion.identity import make_chunk_id, validate_chunk_id, validate_document_id
 from src.services.llm import get_embeddings
 
 
@@ -42,16 +42,17 @@ class VectorStoreManager:
         normalized = dict(metadata)
         document_id = normalized.get("document_id")
         if not document_id:
-            title = normalized.get("paper") or normalized.get("source")
-            if not title:
-                raise ValueError("Every document must include document_id or paper/source metadata")
-            document_id = f"legacy:{title}"
-            normalized["document_id"] = document_id
-        if not normalized.get("chunk_id"):
+            raise ValueError("Every document must include canonical document_id metadata")
+        document_id = validate_document_id(document_id)
+        normalized["document_id"] = document_id
+        chunk_id = normalized.get("chunk_id")
+        if not chunk_id:
             label = normalized.get("paper_chunk") or f"chunk_{index:06d}"
-            normalized["chunk_id"] = hashlib.md5(
-                f"{document_id}:{label}".encode(), usedforsecurity=False
-            ).hexdigest()
+            chunk_id = make_chunk_id(document_id, label)
+        normalized["chunk_id"] = validate_chunk_id(chunk_id)
+        for key, value in normalized.items():
+            if not isinstance(value, (str, int, float, bool)):
+                raise ValueError(f"Metadata field {key!r} must be a scalar value")
         doc.metadata = normalized
         return normalized
 
@@ -125,10 +126,8 @@ class VectorStoreManager:
     ) -> None:
         """Add document chunks to a collection.
 
-        When chunks carry a ``chunk_id`` metadata key the method uses
-        ChromaDB's native **upsert**, making repeated ingestion of the
-        same file idempotent (no duplicate rows).  Without ``chunk_id``
-        it falls back to the LangChain wrapper's default ``add``.
+        ChromaDB's native **upsert** is used with canonical chunk IDs, making
+        repeated ingestion of the same file idempotent (no duplicate rows).
 
         Args:
             documents: List of LangChain Document objects to store.
@@ -171,9 +170,11 @@ class VectorStoreManager:
             LangChain retriever instance.
         """
         self._validate_collection_name(collection_name)
-        top_k = top_k or settings.RAG_TOP_K
-        if not isinstance(top_k, int) or top_k < 1:
+        top_k = settings.RAG_TOP_K if top_k is None else top_k
+        if type(top_k) is not int or top_k < 1:
             raise ValueError("top_k must be a positive integer")
+        if document_id is not None:
+            validate_document_id(document_id)
         store = self.get_or_create_store(collection_name)
         search_kwargs: dict = {
             "k": top_k,
@@ -187,13 +188,51 @@ class VectorStoreManager:
             search_kwargs=search_kwargs,
         )
 
+    def migrate_legacy_metadata(
+        self,
+        collection_name: str,
+        document_ids_by_title: dict[str, str],
+    ) -> int:
+        """Migrate legacy rows with an explicit title-to-ID mapping.
+
+        Legacy rows are never guessed into a canonical identity. Callers must
+        provide the mapping from the old paper/source value to the
+        filename-derived ID. Existing Chroma row IDs are preserved.
+        """
+        self._validate_collection_name(collection_name)
+        if not isinstance(document_ids_by_title, dict):
+            raise ValueError("document_ids_by_title must be a mapping")
+        mapping = {title: validate_document_id(doc_id) for title, doc_id in document_ids_by_title.items()}
+        client = self._get_client_for_collection(collection_name)
+        collection = client.get_collection(collection_name)
+        results = collection.get(include=["metadatas"])
+        migrated = 0
+        for row_id, metadata in zip(results.get("ids", []), results.get("metadatas", [])):
+            if not isinstance(metadata, dict) or metadata.get("document_id"):
+                continue
+            title = metadata.get("paper") or metadata.get("source")
+            canonical_id = mapping.get(title)
+            if canonical_id is None:
+                logger.warning("Skipping legacy row %s with unmapped title %r", row_id, title)
+                continue
+            updated = dict(metadata)
+            updated["document_id"] = canonical_id
+            chunk_id = updated.get("chunk_id")
+            try:
+                validate_chunk_id(chunk_id)
+            except ValueError:
+                label = updated.get("paper_chunk") or f"legacy_{row_id}"
+                updated["chunk_id"] = make_chunk_id(canonical_id, label)
+            collection.update(ids=[row_id], metadatas=[updated])
+            migrated += 1
+        return migrated
+
     def list_papers(self, collection_name: str) -> list[dict]:
         """List all distinct papers stored in a collection.
 
-        Papers are keyed by ``document_id`` (derived from filename) so the
-        same paper in RAG and KG can be joined unambiguously.  When a chunk
-        predates identity tracking the filename-derived title is used as a
-        synthetic ``document_id`` prefixed with ``legacy:``.
+        Papers are keyed by canonical ``document_id`` so the same paper in RAG
+        and KG can be joined unambiguously. Legacy rows are omitted until an
+        explicit migration maps them.
 
         Args:
             collection_name: Collection to inspect.
@@ -210,8 +249,12 @@ class VectorStoreManager:
             for meta in results.get("metadatas", []):
                 if not meta:
                     continue
-                title = meta.get("paper") or meta.get("source") or "Unknown"
-                doc_id = meta.get("document_id") or f"legacy:{title}"
+                doc_id = meta.get("document_id")
+                if not doc_id:
+                    logger.warning("Ignoring legacy Chroma metadata without document_id")
+                    continue
+                validate_document_id(doc_id)
+                title = meta.get("paper") or meta.get("source") or doc_id
                 entry = by_doc.setdefault(
                     doc_id,
                     {
@@ -238,6 +281,7 @@ class VectorStoreManager:
         chunk metadata row for every file makes repeated batch ingestion scale
         with the entire collection instead of the matching paper.
         """
+        validate_document_id(document_id)
         try:
             client = self._get_client_for_collection(collection_name)
             collection = client.get_collection(collection_name)
@@ -292,6 +336,7 @@ class VectorStoreManager:
 
     def is_document_indexed(self, collection_name: str, document_id: str) -> bool:
         """Return True if the collection already contains chunks for this document_id."""
+        validate_document_id(document_id)
         try:
             client = self._get_client_for_collection(collection_name)
             collection = client.get_collection(collection_name)
@@ -349,9 +394,8 @@ class VectorStoreManager:
         """Delete all chunks belonging to a single paper.
 
         Uses the canonical ``document_id`` metadata filter so that every
-        chunk of the paper (including the summary chunk) is removed.  Older
-        chunks that pre-date identity tracking fall back to matching the
-        filename-derived ``paper`` title when ``document_id`` is missing.
+        chunk of the paper (including the summary chunk) is removed. Legacy
+        rows must be migrated before they can be deleted by canonical ID.
 
         Args:
             collection_name: Collection holding the chunks.
@@ -360,15 +404,12 @@ class VectorStoreManager:
         Returns:
             Number of chunks deleted (best-effort).
         """
+        validate_document_id(document_id)
         try:
             client = self._get_client_for_collection(collection_name)
             collection = client.get_collection(collection_name)
             existing = collection.get(where={"document_id": document_id})
             ids = existing.get("ids") or []
-            if not ids and document_id.startswith("legacy:"):
-                title = document_id[len("legacy:") :]
-                existing = collection.get(where={"paper": title})
-                ids = existing.get("ids") or []
             if ids:
                 collection.delete(ids=ids)
             return len(ids)
