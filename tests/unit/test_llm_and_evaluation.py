@@ -46,15 +46,10 @@ def test_profile_builder_normalizes_domain_and_detail_shapes():
 
 
 def test_profile_response_parser_rejects_error_payloads():
-    assert (
-        paper_profile._parse_profile_response(
-            SimpleNamespace(content='{"error": "bad"}')
-        )
-        is None
-    )
-    assert paper_profile._parse_profile_response(
-        SimpleNamespace(content='{"title": "ok"}')
-    ) == {"title": "ok"}
+    assert paper_profile._parse_profile_response(SimpleNamespace(content='{"error": "bad"}')) is None
+    assert paper_profile._parse_profile_response(SimpleNamespace(content='{"title": "ok"}')) == {
+        "title": "ok"
+    }
 
 
 def test_evaluation_scores_are_clamped_and_rendered():
@@ -70,9 +65,7 @@ def test_evaluation_scores_are_clamped_and_rendered():
 
 def test_evaluation_parser_accepts_response_objects_and_rejects_bad_json():
     good = _parse_result(
-        SimpleNamespace(
-            content='{"context_relevance": 4, "faithfulness": 5, "answer_relevance": 3}'
-        )
+        SimpleNamespace(content='{"context_relevance": 4, "faithfulness": 5, "answer_relevance": 3}')
     )
     assert good == EvaluationResult(4, 5, 3, "")
     assert _parse_result(SimpleNamespace(content="bad")) is None

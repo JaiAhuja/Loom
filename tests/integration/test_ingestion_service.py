@@ -17,9 +17,7 @@ def _make_chunk(chunk_type="content", paper="Test Paper"):
     return doc
 
 
-def _fake_processor(
-    chunks=None, paper_title="Test Paper", markdown="# Test", profile=None
-):
+def _fake_processor(chunks=None, paper_title="Test Paper", markdown="# Test", profile=None):
     """Return a mock DocumentProcessor whose .process() returns canned data.
 
     The mock accepts the extra_metadata kwarg added by the identity step.
@@ -116,9 +114,7 @@ def test_ingest_multiple_files(tmp_path):
         p.write_bytes(b"%PDF-fake")
         files.append(str(p))
 
-    svc = IngestionService(
-        processor=_fake_processor(), store=_fake_store(already_indexed=False)
-    )
+    svc = IngestionService(processor=_fake_processor(), store=_fake_store(already_indexed=False))
     result = svc.ingest_files(file_paths=files, collection_name="col")
 
     assert result.succeeded == 3
@@ -156,9 +152,7 @@ def test_progress_callback_called(tmp_path):
     def recorder(current, total, msg):
         calls.append((current, total, msg))
 
-    svc = IngestionService(
-        processor=_fake_processor(), store=_fake_store(already_indexed=False)
-    )
+    svc = IngestionService(processor=_fake_processor(), store=_fake_store(already_indexed=False))
     svc.ingest_files(
         file_paths=[str(pdf)],
         collection_name="col",

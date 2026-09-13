@@ -69,6 +69,4 @@ def test_json_parser_handles_direct_fenced_python_and_invalid_responses():
     assert parse_llm_json('```json\n{"answer": [1, 2]}\n```') == expected
     assert parse_llm_json("```{'answer': [1, 2]}```") == expected
     assert parse_llm_json(None)["error"] == "No response text provided"
-    assert (
-        parse_llm_json("not json")["error"] == "No valid JSON content found in response"
-    )
+    assert parse_llm_json("not json")["error"] == "No valid JSON content found in response"

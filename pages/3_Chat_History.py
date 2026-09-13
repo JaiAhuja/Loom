@@ -95,8 +95,7 @@ with col_resume:
         if st.button("▶ Resume", use_container_width=True, type="primary"):
             record = _load_selected_record()
             st.session_state.messages = [
-                {"role": m.get("role", "assistant"), "content": m.get("content", "")}
-                for m in record.messages
+                {"role": m.get("role", "assistant"), "content": m.get("content", "")} for m in record.messages
             ]
             st.session_state["_resumed_from"] = selected_entry["filename"]
             st.success("Conversation loaded - switching to chat...")
