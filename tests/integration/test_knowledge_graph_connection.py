@@ -40,24 +40,15 @@ def test_driver_lazy_init_is_thread_safe(monkeypatch):
     assert len({id(driver) for driver in drivers}) == 1
 
 
-def test_singleton_init_is_thread_safe(monkeypatch):
-    calls = 0
-
-    class DummyConnection:
-        def __init__(self):
-            nonlocal calls
-            time.sleep(0.01)
-            calls += 1
-
-        def close(self):
-            pass
-
-    connection_module.reset_neo4j_connection()
-    monkeypatch.setattr(connection_module, "Neo4jConnection", DummyConnection)
-
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        conns = list(pool.map(lambda _: connection_module.get_neo4j_connection(), range(20)))
-
-    assert calls == 1
-    assert len({id(conn) for conn in conns}) == 1
-    connection_module.reset_neo4j_connection()
+def test_factory_creates_independent_owned_connections():
+    first = connection_module.create_neo4j_connection(
+        uri="bolt://example.invalid:7687",
+        username="neo4j",
+        password="password",
+    )
+    second = connection_module.create_neo4j_connection(
+        uri="bolt://example.invalid:7687",
+        username="neo4j",
+        password="password",
+    )
+    assert first is not second

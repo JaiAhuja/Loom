@@ -5,8 +5,8 @@ boundary between the agent and the retrieval or knowledge-graph services.
 
 ## Public API
 
-- `create_rag_tool(...)` — creates the `query_documents` tool, optionally
-  scoped to a collection and document ID.
+- `create_rag_tool(...)` — creates the `query_documents` tool from an
+  explicitly owned retrieval service, optionally scoped to a document ID.
 - `create_safe_graph_tool(...)` — creates the `query_knowledge_graph` tool
   backed by approved graph intents and parameter validation.
 

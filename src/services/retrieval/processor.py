@@ -1,4 +1,3 @@
-import hashlib
 import logging
 import os
 import re
@@ -6,6 +5,7 @@ from typing import Callable, Optional
 
 from langchain_core.documents import Document
 
+from src.services.ingestion.identity import make_chunk_id, validate_document_id
 from src.services.llm import PaperProfile, extract_paper_profile, get_llm
 
 logger = logging.getLogger(__name__)
@@ -115,8 +115,7 @@ class DocumentProcessor:
     @staticmethod
     def generate_chunk_id(document_id: str, paper_chunk: str) -> str:
         """Derive a deterministic chunk ID from document_id and chunk label."""
-        key = f"{document_id}:{paper_chunk}"
-        return hashlib.md5(key.encode(), usedforsecurity=False).hexdigest()
+        return make_chunk_id(document_id, paper_chunk)
 
     def process(
         self,
@@ -154,6 +153,9 @@ class DocumentProcessor:
                   when LLM extraction was skipped/failed.
         """
         file_name = os.path.basename(file_path)
+        if not isinstance(extra_metadata, dict) or not extra_metadata.get("document_id"):
+            raise ValueError("extra_metadata.document_id is required for canonical document identity")
+        document_id = validate_document_id(extra_metadata["document_id"])
 
         def _step(msg: str) -> None:
             """Emit *msg* to stdout and invoke the caller's on_step hook."""
@@ -205,6 +207,7 @@ class DocumentProcessor:
         print(f"  [processor] Created {len(raw_chunks)} chunks", flush=True)
 
         base_metadata = {
+            "document_id": document_id,
             "paper": paper_title,
             "domain": domain,
             "total_chunks": len(raw_chunks),
@@ -243,7 +246,7 @@ class DocumentProcessor:
                 doc.metadata.update(extra_metadata)
 
         for doc in enriched:
-            doc_id = doc.metadata.get("document_id", doc.metadata.get("source", file_name))
+            doc_id = validate_document_id(doc.metadata["document_id"])
             chunk_label = doc.metadata.get("paper_chunk", "unknown")
             doc.metadata["chunk_id"] = self.generate_chunk_id(doc_id, chunk_label)
 

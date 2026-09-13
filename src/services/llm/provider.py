@@ -9,6 +9,9 @@ _embeddings_cache: dict[str, OllamaEmbeddings] = {}
 def get_llm(model: str = None, temperature: float = None, require_json: bool = False) -> ChatOllama:
     resolved_model = model or settings.OLLAMA_MODEL
     resolved_temp = temperature if temperature is not None else settings.OLLAMA_TEMPERATURE
+    settings.validate_runtime(require_ollama=True)
+    if not isinstance(resolved_model, str) or not resolved_model.strip():
+        raise ValueError("OLLAMA_MODEL must be non-empty")
 
     key = (resolved_model, resolved_temp, require_json)
 
@@ -36,6 +39,9 @@ def get_embeddings(model: str = None) -> OllamaEmbeddings:
         model: Embedding model name. Defaults to settings.OLLAMA_EMBEDDING_MODEL.
     """
     resolved_model = model or settings.OLLAMA_EMBEDDING_MODEL
+    settings.validate_runtime(require_ollama=True, require_embeddings=True)
+    if not isinstance(resolved_model, str) or not resolved_model.strip():
+        raise ValueError("OLLAMA_EMBEDDING_MODEL must be non-empty")
 
     if resolved_model not in _embeddings_cache:
         _embeddings_cache[resolved_model] = OllamaEmbeddings(

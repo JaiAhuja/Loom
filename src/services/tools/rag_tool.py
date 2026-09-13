@@ -4,6 +4,7 @@ from langchain_core.documents import Document
 from langchain_core.tools import StructuredTool
 
 from config.settings import settings
+from src.services.ingestion.identity import validate_document_id
 from src.services.retrieval.store import VectorStoreManager
 
 logger = logging.getLogger(__name__)
@@ -41,7 +42,7 @@ def _format_search(docs: list[Document], scope_label: str) -> str:
 
 def create_rag_tool(
     collection_name: str,
-    store: VectorStoreManager | None = None,
+    store: VectorStoreManager | None,
     document_id: str | None = None,
 ):
     """Create a RAG document query tool bound to a specific collection.
@@ -51,10 +52,7 @@ def create_rag_tool(
 
     Args:
         collection_name: The ChromaDB collection to query.
-        store: Optional pre-built :class:`VectorStoreManager` to reuse.
-            When ``None`` a fresh instance is created (legacy behaviour).
-            Passing the app-level cached store avoids spinning up a new
-            Chroma client + embedding cache on every chat turn.
+        store: Explicitly owned retrieval service supplied by the application/service owner.
         document_id: Canonical paper identity (filename-based, e.g.
             ``"Self-Supervised Learning"``) that scopes
             retrieval by the stable content-addressed key.
@@ -62,12 +60,15 @@ def create_rag_tool(
     Returns:
         A LangChain @tool decorated function.
     """
-    if store is None:
-        store = VectorStoreManager()
     if not collection_name:
         raise ValueError("collection_name is required")
+    if store is None or not callable(getattr(store, "get_retriever", None)):
+        raise TypeError("store must be an explicitly owned retrieval service")
+    VectorStoreManager._validate_collection_name(collection_name)
     if document_id is not None and not document_id.strip():
         raise ValueError("document_id must be non-empty when provided")
+    if document_id is not None:
+        validate_document_id(document_id)
 
     scope_label = ""
     if document_id:
@@ -85,7 +86,12 @@ def create_rag_tool(
         """
         try:
             if not isinstance(query, str) or not query.strip():
-                return "Document search requires a non-empty query."
+                return "Document search error: query must be non-empty."
+            if len(query) > settings.RAG_MAX_QUERY_LENGTH:
+                return (
+                    "Document search error: query exceeds the "
+                    f"{settings.RAG_MAX_QUERY_LENGTH}-character limit."
+                )
             retriever = store.get_retriever(
                 collection_name, top_k=settings.RAG_TOP_K, document_id=document_id
             )
@@ -101,7 +107,12 @@ def create_rag_tool(
         """Async search through uploaded PDF documents for relevant information."""
         try:
             if not isinstance(query, str) or not query.strip():
-                return "Document search requires a non-empty query."
+                return "Document search error: query must be non-empty."
+            if len(query) > settings.RAG_MAX_QUERY_LENGTH:
+                return (
+                    "Document search error: query exceeds the "
+                    f"{settings.RAG_MAX_QUERY_LENGTH}-character limit."
+                )
             retriever = store.get_retriever(
                 collection_name, top_k=settings.RAG_TOP_K, document_id=document_id
             )

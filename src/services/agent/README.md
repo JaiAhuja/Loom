@@ -17,6 +17,7 @@ returns a compiled graph that can be invoked with conversation messages.
   tools, shared vector-store and Neo4j clients, and model overrides.
 - `AgentState` — state schema used by the LangGraph workflow.
 - `build_system_prompt(...)` and `should_continue(...)` — lower-level helpers
+  with bounded tool iterations and repeated-call protection.
   used when customizing or testing the graph.
 
 ## Dependencies and tests

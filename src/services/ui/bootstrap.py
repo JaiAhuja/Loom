@@ -8,7 +8,7 @@ import urllib.request
 import streamlit as st
 
 from config.settings import settings
-from src.services.knowledge_graph import get_neo4j_connection
+from src.services.knowledge_graph import create_neo4j_connection, Neo4jConnection
 from src.services.retrieval import DocumentProcessor, VectorStoreManager
 
 
@@ -50,6 +50,12 @@ def check_neo4j_status() -> tuple[bool, str]:
             )
         else:
             return False, f"{type(exc).__name__}: {exc}"
+
+
+@st.cache_resource
+def get_neo4j_connection() -> Neo4jConnection:
+    """Return the app-owned Neo4j service managed by Streamlit's cache."""
+    return create_neo4j_connection()
 
 
 @st.cache_resource

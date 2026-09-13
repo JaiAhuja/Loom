@@ -6,8 +6,8 @@ intent-based query service used by the agent tool.
 
 ## Public API
 
-- `get_neo4j_connection()` / `Neo4jConnection` — create and use the shared
-  Neo4j client.
+- `create_neo4j_connection()` / `Neo4jConnection` — create an explicitly
+  owned Neo4j client. Streamlit owns its cached app-level instance.
 - `KnowledgeGraphWriter` — write paper profiles and cross-paper concept or
   finding relationships.
 - `KnowledgeGraphQueries` — parameterised queries for papers, concepts,

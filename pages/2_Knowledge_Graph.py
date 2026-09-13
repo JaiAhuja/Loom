@@ -10,8 +10,8 @@ from pyvis.network import Network
 
 from src.domain import Paper
 from src.domain.paper import merge_paper_sources
-from src.services.knowledge_graph import KnowledgeGraphQueries, get_neo4j_connection
-from src.services.ui.bootstrap import get_vector_store
+from src.services.knowledge_graph import KnowledgeGraphQueries
+from src.services.ui.bootstrap import get_neo4j_connection, get_vector_store
 
 st.set_page_config(
     page_title="Knowledge Graph - Loom",

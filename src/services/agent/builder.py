@@ -1,5 +1,6 @@
 import logging
 
+from config.settings import settings
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
 
@@ -55,6 +56,11 @@ class GraphBuilder:
         Returns:
             Compiled LangGraph StateGraph ready for invocation.
         """
+        settings.validate_runtime(
+            require_ollama=True,
+            require_embeddings=use_rag,
+            require_neo4j=use_graph,
+        )
         llm = get_llm(model=model, temperature=temperature)
         tools = self._gather_tools(
             use_rag,
@@ -68,7 +74,15 @@ class GraphBuilder:
         system_prompt = build_system_prompt(use_rag, use_graph)
 
         graph = StateGraph(AgentState)
-        graph.add_node("agent", create_agent_node(llm, tools, system_prompt))
+        graph.add_node(
+            "agent",
+            create_agent_node(
+                llm,
+                tools,
+                system_prompt,
+                max_tool_iterations=settings.AGENT_MAX_TOOL_ITERATIONS,
+            ),
+        )
 
         if tools:
             graph.add_node("tools", ToolNode(tools))
@@ -101,6 +115,8 @@ class GraphBuilder:
         tools = []
 
         if use_rag and collection_name:
+            if vector_store is None:
+                raise ValueError("vector_store is required when RAG is enabled")
             tools.append(
                 create_rag_tool(
                     collection_name,
