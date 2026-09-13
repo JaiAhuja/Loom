@@ -9,8 +9,6 @@ pytest.importorskip("neo4j")
 
 from src.services.knowledge_graph import connection as connection_module
 
-pytestmark = pytest.mark.integration
-
 
 class _DummyDriver:
     def close(self):

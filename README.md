@@ -268,28 +268,6 @@ loom/
 └── tests/                    # pytest test suite
 ```
 
-### Test Strategy
-
-Tests are organized around the service boundaries:
-
-- `tests/unit/` covers deterministic domain, parsing, configuration, agent,
-  and evaluation behavior without external services.
-- `tests/integration/` verifies storage, ingestion, retrieval, graph, UI, and
-  connection adapters using temporary data and deterministic fakes.
-- `tests/e2e/` exercises a complete upload → ingestion → retrieval → chat
-  history workflow.
-
-Run the complete suite with:
-
-```bash
-pytest -q
-```
-
-Run one layer with `pytest -q -m unit`, `pytest -q -m integration`, or
-`pytest -q -m e2e`. Tests that require optional runtime dependencies skip
-cleanly when those packages are not installed; they execute after installing
-the full `requirements.txt` set.
-
 ---
 
 ## ⚙️ Configuration
