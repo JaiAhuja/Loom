@@ -64,11 +64,10 @@ def create_rag_tool(
     """
     if store is None:
         store = VectorStoreManager()
-    retriever = store.get_retriever(
-        collection_name,
-        top_k=settings.RAG_TOP_K,
-        document_id=document_id,
-    )
+    if not collection_name:
+        raise ValueError("collection_name is required")
+    if document_id is not None and not document_id.strip():
+        raise ValueError("document_id must be non-empty when provided")
 
     scope_label = ""
     if document_id:
@@ -85,6 +84,11 @@ def create_rag_tool(
             query: The search query to find relevant document content.
         """
         try:
+            if not isinstance(query, str) or not query.strip():
+                return "Document search requires a non-empty query."
+            retriever = store.get_retriever(
+                collection_name, top_k=settings.RAG_TOP_K, document_id=document_id
+            )
             return _format_search(retriever.invoke(query), scope_label)
         except Exception as e:
             logger.error(
@@ -96,6 +100,11 @@ def create_rag_tool(
     async def _aquery_documents(query: str) -> str:
         """Async search through uploaded PDF documents for relevant information."""
         try:
+            if not isinstance(query, str) or not query.strip():
+                return "Document search requires a non-empty query."
+            retriever = store.get_retriever(
+                collection_name, top_k=settings.RAG_TOP_K, document_id=document_id
+            )
             return _format_search(await retriever.ainvoke(query), scope_label)
         except Exception as e:
             logger.error(

@@ -11,6 +11,7 @@ from langchain_core.documents import Document
 from langchain_core.messages import AIMessage
 
 from src.services.agent.nodes import build_system_prompt, should_continue
+from src.services.agent.builder import GraphBuilder
 from src.services.knowledge_graph.service import GraphQueryService
 from src.services.tools.rag_tool import (
     _format_doc_result,
@@ -78,6 +79,29 @@ def test_rag_tool_uses_the_bound_retriever_for_sync_and_async_queries():
     tool = create_rag_tool("notes", store=Store(), document_id="paper-1")
     assert "answer for question" in tool.invoke({"query": "question"})
     assert "answer for async" in asyncio.run(tool.ainvoke({"query": "async"}))
+
+
+def test_rag_tool_rejects_empty_queries_without_touching_the_store():
+    class Store:
+        def get_retriever(self, **kwargs):
+            raise AssertionError("retriever should not be created for an empty query")
+
+    tool = create_rag_tool("notes", store=Store())
+    assert "requires a non-empty query" in tool.invoke({"query": "  "})
+
+
+def test_builder_fails_fast_when_enabled_dependencies_are_missing():
+    builder = GraphBuilder()
+    try:
+        builder._gather_tools(use_rag=True, use_graph=False, collection_name=None)
+        assert False, "RAG without a collection must fail"
+    except ValueError as exc:
+        assert "collection_name" in str(exc)
+    try:
+        builder._gather_tools(use_rag=False, use_graph=True, collection_name=None)
+        assert False, "Graph without a connection must fail"
+    except ValueError as exc:
+        assert "neo4j_conn" in str(exc)
 
 
 def test_graph_service_validates_intents_and_dispatches_to_queries():

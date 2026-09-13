@@ -1,4 +1,6 @@
+import hashlib
 import logging
+import re
 
 import chromadb
 from langchain_chroma import Chroma
@@ -26,6 +28,33 @@ class VectorStoreManager:
         self._clients: dict[str, chromadb.PersistentClient] = {}
         self._stores: dict[str, Chroma] = {}
 
+    @staticmethod
+    def _validate_collection_name(collection_name: str) -> str:
+        if not isinstance(collection_name, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,63}", collection_name):
+            raise ValueError("collection_name must be 1-63 characters: letters, numbers, '_' or '-'")
+        return collection_name
+
+    @staticmethod
+    def _normalize_metadata(doc: Document, index: int) -> dict:
+        metadata = getattr(doc, "metadata", None)
+        if not isinstance(metadata, dict):
+            raise ValueError("Every document must have dict metadata")
+        normalized = dict(metadata)
+        document_id = normalized.get("document_id")
+        if not document_id:
+            title = normalized.get("paper") or normalized.get("source")
+            if not title:
+                raise ValueError("Every document must include document_id or paper/source metadata")
+            document_id = f"legacy:{title}"
+            normalized["document_id"] = document_id
+        if not normalized.get("chunk_id"):
+            label = normalized.get("paper_chunk") or f"chunk_{index:06d}"
+            normalized["chunk_id"] = hashlib.md5(
+                f"{document_id}:{label}".encode(), usedforsecurity=False
+            ).hexdigest()
+        doc.metadata = normalized
+        return normalized
+
     @property
     def embeddings(self):
         """Lazy-initialize embeddings to avoid startup overhead."""
@@ -46,6 +75,8 @@ class VectorStoreManager:
             │   └── <hash-based-dirs>/
         """
         import os
+
+        self._validate_collection_name(collection_name)
 
         collection_dir = os.path.join(self.base_persist_dir, collection_name)
         os.makedirs(collection_dir, exist_ok=True)
@@ -75,6 +106,7 @@ class VectorStoreManager:
         Returns:
             LangChain Chroma vector store instance.
         """
+        self._validate_collection_name(collection_name)
         store = self._stores.get(collection_name)
         if store is None:
             persist_dir = self._get_collection_persist_dir(collection_name)
@@ -102,31 +134,25 @@ class VectorStoreManager:
             documents: List of LangChain Document objects to store.
             collection_name: Target collection name.
         """
+        self._validate_collection_name(collection_name)
         if not documents:
             logger.debug("No documents to add to collection %s", collection_name)
             return
 
-        for doc in documents:
-            if not isinstance(getattr(doc, "metadata", None), dict):
-                doc.metadata = {}
+        for index, doc in enumerate(documents):
+            self._normalize_metadata(doc, index)
 
-        ids = [doc.metadata.get("chunk_id") for doc in documents]
-
-        if all(ids):
-            client = self._get_client_for_collection(collection_name)
-            collection = client.get_or_create_collection(collection_name)
-            texts = [doc.page_content for doc in documents]
-            metadatas = [doc.metadata for doc in documents]
-            embeddings = self.embeddings.embed_documents(texts)
-            collection.upsert(
-                ids=ids,
-                documents=texts,
-                metadatas=metadatas,
-                embeddings=embeddings,
-            )
-        else:
-            store = self.get_or_create_store(collection_name)
-            store.add_documents(documents)
+        client = self._get_client_for_collection(collection_name)
+        collection = client.get_or_create_collection(collection_name)
+        texts = [doc.page_content for doc in documents]
+        metadatas = [doc.metadata for doc in documents]
+        embeddings = self.embeddings.embed_documents(texts)
+        collection.upsert(
+            ids=[metadata["chunk_id"] for metadata in metadatas],
+            documents=texts,
+            metadatas=metadatas,
+            embeddings=embeddings,
+        )
 
     def get_retriever(
         self,
@@ -144,7 +170,10 @@ class VectorStoreManager:
         Returns:
             LangChain retriever instance.
         """
+        self._validate_collection_name(collection_name)
         top_k = top_k or settings.RAG_TOP_K
+        if not isinstance(top_k, int) or top_k < 1:
+            raise ValueError("top_k must be a positive integer")
         store = self.get_or_create_store(collection_name)
         search_kwargs: dict = {
             "k": top_k,

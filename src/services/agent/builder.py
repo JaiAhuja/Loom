@@ -108,13 +108,13 @@ class GraphBuilder:
                     document_id=document_id,
                 )
             )
+        elif use_rag:
+            raise ValueError("collection_name is required when RAG is enabled")
 
         if use_graph:
             if neo4j_conn is not None:
                 tools.append(create_safe_graph_tool(neo4j_conn))
             else:
-                logger.warning(
-                    "use_graph=True but no Neo4j connection provided. Graph tool will not be available."
-                )
+                raise ValueError("neo4j_conn is required when the knowledge graph is enabled")
 
         return tools
