@@ -79,5 +79,10 @@ def initialize_schema(conn: Neo4jConnection) -> None:
         f"CREATE INDEX IF NOT EXISTS FOR (d:{DETAIL}) ON (d.category)",
     ]
 
-    for cypher in constraints + indexes:
-        conn.execute_write(cypher)
+    queries = [(cypher, {}) for cypher in constraints + indexes]
+    execute_write_tx = getattr(conn, "execute_write_tx", None)
+    if execute_write_tx is not None:
+        execute_write_tx(queries)
+    else:
+        for cypher, parameters in queries:
+            conn.execute_write(cypher, parameters)

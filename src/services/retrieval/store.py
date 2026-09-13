@@ -24,6 +24,7 @@ class VectorStoreManager:
         self.base_persist_dir = persist_dir or settings.CHROMA_PERSIST_DIR
         self._embeddings = None
         self._clients: dict[str, chromadb.PersistentClient] = {}
+        self._stores: dict[str, Chroma] = {}
 
     @property
     def embeddings(self):
@@ -74,12 +75,16 @@ class VectorStoreManager:
         Returns:
             LangChain Chroma vector store instance.
         """
-        persist_dir = self._get_collection_persist_dir(collection_name)
-        return Chroma(
-            collection_name=collection_name,
-            embedding_function=self.embeddings,
-            persist_directory=persist_dir,
-        )
+        store = self._stores.get(collection_name)
+        if store is None:
+            persist_dir = self._get_collection_persist_dir(collection_name)
+            store = Chroma(
+                collection_name=collection_name,
+                embedding_function=self.embeddings,
+                persist_directory=persist_dir,
+            )
+            self._stores[collection_name] = store
+        return store
 
     def add_documents(
         self,
@@ -197,6 +202,41 @@ class VectorStoreManager:
             )
             return []
 
+    def get_paper(self, collection_name: str, document_id: str) -> dict | None:
+        """Return metadata for one paper without scanning the whole collection.
+
+        This is used by ingestion's already-indexed path, where loading every
+        chunk metadata row for every file makes repeated batch ingestion scale
+        with the entire collection instead of the matching paper.
+        """
+        try:
+            client = self._get_client_for_collection(collection_name)
+            collection = client.get_collection(collection_name)
+            results = collection.get(
+                where={"document_id": document_id},
+                include=["metadatas"],
+            )
+            metadatas = results.get("metadatas", [])
+            if not metadatas:
+                return None
+
+            first = next((metadata for metadata in metadatas if metadata), {})
+            title = first.get("paper") or first.get("source") or "Unknown"
+            return {
+                "document_id": document_id,
+                "title": title,
+                "domain": first.get("domain", "Other"),
+                "chunk_count": len(metadatas),
+            }
+        except Exception:
+            logger.debug(
+                "Failed to get paper %s from collection %s",
+                document_id,
+                collection_name,
+                exc_info=True,
+            )
+            return None
+
     def list_collections(self) -> list[str]:
         """List all available collection names.
 
@@ -274,6 +314,7 @@ class VectorStoreManager:
             except Exception as e:
                 logger.debug("Failed to delete collection directory %s: %s", collection_dir, e)
         self._clients.pop(collection_name, None)
+        self._stores.pop(collection_name, None)
 
     def delete_paper(self, collection_name: str, document_id: str) -> int:
         """Delete all chunks belonging to a single paper.

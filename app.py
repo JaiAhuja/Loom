@@ -344,6 +344,8 @@ with st.sidebar:
                     st.error(f"❌ RAG: {fr.file_name}: {fr.error}")
 
             progress.progress(1.0, text="Done!")
+
+            _get_compiled_graph.clear()  # Rebuild the cached graph so its retriever sees newly indexed data.
             st.rerun()
 
         if existing_collections and collection_name in existing_collections:
@@ -361,6 +363,7 @@ with st.sidebar:
                 trigger_kwargs={"use_container_width": True},
                 confirm_container=_del_collection_confirm_area,
             ):
+                _get_compiled_graph.clear()  # Clear the stale retriever cache.
                 st.success(f"Deleted collection: `{collection_name}`")
                 st.rerun()
 

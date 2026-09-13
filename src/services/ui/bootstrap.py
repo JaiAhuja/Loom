@@ -35,7 +35,6 @@ def check_neo4j_status() -> tuple[bool, str]:
     """
     try:
         conn = get_neo4j_connection()
-        conn.driver.verify_connectivity()
         conn.execute_read("RETURN 1")
         return True, ""
     except Exception as exc:
