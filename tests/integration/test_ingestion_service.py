@@ -3,7 +3,11 @@
 import re
 from unittest.mock import MagicMock
 
+import pytest
+
 from src.services.ingestion.service import FileResult, IngestionResult, IngestionService
+
+pytestmark = pytest.mark.integration
 
 
 

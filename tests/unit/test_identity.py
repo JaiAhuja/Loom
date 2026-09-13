@@ -3,6 +3,8 @@
 import hashlib
 import os
 
+import pytest
+
 from src.services.ingestion.identity import (
     DocumentIdentity,
     DocumentIdentityError,
@@ -13,6 +15,8 @@ from src.services.ingestion.identity import (
     make_document_id,
     save_upload,
 )
+
+pytestmark = pytest.mark.unit
 
 
 
