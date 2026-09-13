@@ -20,12 +20,17 @@ from typing import Any
 from langchain_core.tools import StructuredTool
 
 from src.services.knowledge_graph.connection import Neo4jConnection
-from src.services.knowledge_graph.service import GraphQueryService, ALL_INTENTS, REQUIRED_PARAMS
+from src.services.knowledge_graph.service import (
+    GraphQueryService,
+    ALL_INTENTS,
+    REQUIRED_PARAMS,
+)
 
 logger = logging.getLogger(__name__)
 
 _INTENT_HELP = "\n".join(
-    f"  - {intent}  (params: {', '.join(req)})" if (req := REQUIRED_PARAMS.get(intent, ()))
+    f"  - {intent}  (params: {', '.join(req)})"
+    if (req := REQUIRED_PARAMS.get(intent, ()))
     else f"  - {intent}"
     for intent in sorted(ALL_INTENTS)
 )
@@ -43,7 +48,7 @@ def create_safe_graph_tool(conn: Neo4jConnection) -> Any:
         f"{_INTENT_HELP}\n\n"
         "Args:\n"
         '    intent: The intent name (e.g. "graph_stats", "paper_details").\n'
-        "    params: A JSON string of parameters, e.g. '{\"title\": \"My Paper\"}'.\n"
+        '    params: A JSON string of parameters, e.g. \'{"title": "My Paper"}\'.\n'
         "            Use '{}' or omit for intents that take no parameters.\n\n"
         "Returns:\n"
         "    A structured text summary of the query results."
@@ -99,7 +104,11 @@ def _graph_error(exc: Exception, intent: str, async_label: bool) -> str:
     prefix = "Async graph" if async_label else "Graph"
     logger.error(
         "%s query service error for intent '%s': %s: %s",
-        prefix, intent, type(exc).__name__, exc, exc_info=True,
+        prefix,
+        intent,
+        type(exc).__name__,
+        exc,
+        exc_info=True,
     )
     if "Connection" in type(exc).__name__ or "connection" in str(exc).lower():
         return "Knowledge graph unavailable (connection error). Please try again."
@@ -109,10 +118,14 @@ def _graph_error(exc: Exception, intent: str, async_label: bool) -> str:
 def _format_service_result(result: Any, intent: str, async_label: bool) -> str:
     if not isinstance(result, dict):
         prefix = "Async graph" if async_label else "Graph"
-        logger.error("%s query returned non-dict result for intent %s: %r", prefix, intent, result)
+        logger.error(
+            "%s query returned non-dict result for intent %s: %r",
+            prefix,
+            intent,
+            result,
+        )
         return "Graph query failed: invalid result format."
     return _format_result(result.get("intent") or intent, result.get("data"))
-
 
 
 def _format_result(intent: str, data: Any) -> str:
@@ -146,11 +159,17 @@ def _format_paper_details(data: dict) -> str:
         lines.append(f"\n*{section.title()} ({len(items)}):*")
         for item in items:
             if section == "concepts":
-                lines.append(f"  - {item.get('name', '?')} ({item.get('depth', '')}): {item.get('description', '')}")
+                lines.append(
+                    f"  - {item.get('name', '?')} ({item.get('depth', '')}): {item.get('description', '')}"
+                )
             elif section == "methods":
-                lines.append(f"  - {item.get('name', '?')}: {item.get('description', '')}")
+                lines.append(
+                    f"  - {item.get('name', '?')}: {item.get('description', '')}"
+                )
             else:
-                lines.append(f"  - [{item.get('evidence_type', '')}] {item.get('claim', '')}")
+                lines.append(
+                    f"  - [{item.get('evidence_type', '')}] {item.get('claim', '')}"
+                )
     return "\n".join(lines)
 
 
@@ -182,20 +201,28 @@ def _format_generic(data: Any) -> str:
 _FORMATTERS: dict[str, Any] = {
     "graph_stats": _format_graph_stats,
     "paper_list": lambda d: _format_list(
-        d, "Papers in the graph", "No papers in the knowledge graph.",
+        d,
+        "Papers in the graph",
+        "No papers in the knowledge graph.",
         lambda p: f"- {p.get('title', 'Untitled')} [{p.get('domain', '')}] ({p.get('concept_count', 0)} concepts)",
     ),
     "paper_details": _format_paper_details,
     "shared_concepts": lambda d: _format_list(
-        d, "Shared Concepts", "No shared concepts found between these papers.",
+        d,
+        "Shared Concepts",
+        "No shared concepts found between these papers.",
         lambda c: f"- {c.get('concept', '?')} [{c.get('domain', '')}]: {c.get('description', '')}",
     ),
     "concept_papers": lambda d: _format_list(
-        d, "Papers discussing this concept", "No papers discuss this concept.",
+        d,
+        "Papers discussing this concept",
+        "No papers discuss this concept.",
         lambda p: f"- {p.get('title', '?')} [{p.get('domain', '')}] (depth: {p.get('depth', '?')})",
     ),
     "related_concepts": lambda d: _format_list(
-        d, "Related Concepts", "No related concepts found.",
+        d,
+        "Related Concepts",
+        "No related concepts found.",
         lambda c: f"- {c.get('name', '?')} (strength: {(c.get('strength') or 0):.1f})",
     ),
     "contradiction_list": lambda d: _format_finding_list(d, "Contradicting"),

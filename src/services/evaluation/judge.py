@@ -5,6 +5,7 @@ Scores a RAG response across three dimensions (0–5 each):
 - Faithfulness: how grounded the answer is in the retrieved context.
 - Answer Relevance: how directly and helpfully the answer addresses the query.
 """
+
 from __future__ import annotations
 
 import logging
@@ -51,10 +52,11 @@ def _parse_result(response, async_label: bool = False) -> EvaluationResult | Non
     return None
 
 
-_JUDGE_PROMPT = ChatPromptTemplate.from_messages([
-    (
-        "system",
-        """### ROLE
+_JUDGE_PROMPT = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            """### ROLE
 You are a strict RAG evaluation judge. Score a RAG response across three dimensions.
 
 ### SCORING RUBRIC
@@ -79,20 +81,21 @@ You are a strict RAG evaluation judge. Score a RAG response across three dimensi
   "faithfulness": <integer 0-5>,
   "answer_relevance": <integer 0-5>,
   "reasoning": "<one concise sentence justifying each of the three scores>"
-}}"""
-    ),
-    (
-        "human",
-        """**User Query:**
+}}""",
+        ),
+        (
+            "human",
+            """**User Query:**
 {query}
 
 **Retrieved Context:**
 {context}
 
 **Generated Answer:**
-{answer}"""
-    ),
-])
+{answer}""",
+        ),
+    ]
+)
 
 
 @dataclass
@@ -155,7 +158,9 @@ class RAGJudge:
         try:
             llm = get_llm(model=model, temperature=0.0, require_json=True)
             chain = _JUDGE_PROMPT | llm
-            response = chain.invoke({"query": query, "context": context, "answer": answer})
+            response = chain.invoke(
+                {"query": query, "context": context, "answer": answer}
+            )
             return _parse_result(response)
         except Exception as exc:
             logger.warning("RAG evaluation failed: %s", exc, exc_info=True)
@@ -172,7 +177,9 @@ class RAGJudge:
         try:
             llm = get_llm(model=model, temperature=0.0, require_json=True)
             chain = _JUDGE_PROMPT | llm
-            response = await chain.ainvoke({"query": query, "context": context, "answer": answer})
+            response = await chain.ainvoke(
+                {"query": query, "context": context, "answer": answer}
+            )
             return _parse_result(response, async_label=True)
         except Exception as exc:
             logger.warning("Async RAG evaluation failed: %s", exc, exc_info=True)

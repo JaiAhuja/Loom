@@ -22,8 +22,16 @@ st.set_page_config(
 st.title("Knowledge Graph Explorer")
 st.caption("Visualize and explore relationships between your research papers")
 
-rag_status = "✅ RAG Enabled" if st.session_state.get("use_rag_persistent", False) else "⚫ RAG Disabled"
-kg_status = "✅ KG Enabled" if st.session_state.get("use_graph_persistent", False) else "⚫ KG Disabled"
+rag_status = (
+    "✅ RAG Enabled"
+    if st.session_state.get("use_rag_persistent", False)
+    else "⚫ RAG Disabled"
+)
+kg_status = (
+    "✅ KG Enabled"
+    if st.session_state.get("use_graph_persistent", False)
+    else "⚫ KG Disabled"
+)
 st.info(f"**Toggle Status:** {rag_status} · {kg_status} (configure on main page)")
 
 
@@ -31,10 +39,7 @@ try:
     conn = get_neo4j_connection()
     if not conn.is_connected():
         st.error("❌ Neo4j is not connected.")
-        st.info(
-            "Start Neo4j with:\n"
-            "Open Neo4j Desktop and start your database."
-        )
+        st.info("Start Neo4j with:\nOpen Neo4j Desktop and start your database.")
         st.stop()
 except Exception as e:
     st.error(f"❌ Cannot connect to Neo4j: {e}")
@@ -46,13 +51,16 @@ try:
     stats = queries.get_graph_stats()
 except Exception as e:
     error_msg = str(e).lower()
-    if "database unavailable" in error_msg or "database `neo4j` is currently unavailable" in error_msg:
+    if (
+        "database unavailable" in error_msg
+        or "database `neo4j` is currently unavailable" in error_msg
+    ):
         st.error("❌ Neo4j database instance is not available.")
         st.info(
             "**To fix this:**\n"
             "1. Open Neo4j Desktop\n"
             "2. Find your database instance and click **Start** if it's stopped\n"
-            "3. Wait for it to show \"Started\" status\n"
+            '3. Wait for it to show "Started" status\n'
             "4. Refresh this page"
         )
         st.stop()
@@ -82,12 +90,14 @@ with st.expander("📚 All papers across stores (RAG ∪ KG)", expanded=False):
         rag_papers_all: list[dict] = []
         for col_name in vstore.list_collections():
             for p in vstore.list_papers(col_name):
-                rag_papers_all.append({
-                    "document_id": p["document_id"],
-                    "title": p["title"],
-                    "domain": p["domain"],
-                    "chunk_count": p["chunk_count"],
-                })
+                rag_papers_all.append(
+                    {
+                        "document_id": p["document_id"],
+                        "title": p["title"],
+                        "domain": p["domain"],
+                        "chunk_count": p["chunk_count"],
+                    }
+                )
     except Exception:
         rag_papers_all = []
 
@@ -99,10 +109,13 @@ with st.expander("📚 All papers across stores (RAG ∪ KG)", expanded=False):
             "domain": p.get("domain"),
             "concept_count": p.get("concept_count", 0),
         }
-        for p in _kg_rows if p.get("document_id")
+        for p in _kg_rows
+        if p.get("document_id")
     ]
 
-    unified: list[Paper] = merge_paper_sources(rag_papers=rag_papers_all, kg_papers=kg_papers)
+    unified: list[Paper] = merge_paper_sources(
+        rag_papers=rag_papers_all, kg_papers=kg_papers
+    )
     if unified:
         st.dataframe(
             [
@@ -123,7 +136,10 @@ with st.expander("📚 All papers across stores (RAG ∪ KG)", expanded=False):
         st.caption("No papers indexed yet.")
 
 _tab_labels = [
-    "🕸️ Graph View", "📄 Papers", "💡 Concepts", "🔗 Relationships",
+    "🕸️ Graph View",
+    "📄 Papers",
+    "💡 Concepts",
+    "🔗 Relationships",
 ]
 
 _tabs = st.tabs(_tab_labels)
@@ -131,14 +147,16 @@ tab_graph, tab_papers, tab_concepts, tab_relations = _tabs
 
 with tab_graph:
     st.subheader("Interactive Research Graph")
-    st.caption("Papers (large nodes) connected to concepts, methods, findings, and typed paper-detail nodes.")
+    st.caption(
+        "Papers (large nodes) connected to concepts, methods, findings, and typed paper-detail nodes."
+    )
 
     with st.expander("🔧 Filters", expanded=False):
         _all_papers_for_filter = queries.get_all_papers()
         _all_concepts_for_filter = queries.get_all_concepts()
-        _all_domains = sorted({
-            c.get("domain") for c in _all_concepts_for_filter if c.get("domain")
-        })
+        _all_domains = sorted(
+            {c.get("domain") for c in _all_concepts_for_filter if c.get("domain")}
+        )
 
         f_col1, f_col2, f_col3 = st.columns(3)
         selected_domains = f_col1.multiselect(
@@ -159,8 +177,14 @@ with tab_graph:
         selected_rel_types = f_col3.multiselect(
             "Relationship types",
             options=[
-                "DISCUSSES", "HAS_DETAIL", "USES_METHOD", "HAS_FINDING",
-                "RELATED_TO", "SUPPORTS", "CONTRADICTS", "EXTENDS",
+                "DISCUSSES",
+                "HAS_DETAIL",
+                "USES_METHOD",
+                "HAS_FINDING",
+                "RELATED_TO",
+                "SUPPORTS",
+                "CONTRADICTS",
+                "EXTENDS",
             ],
             default=[],
             help="Leave empty to include all.",
@@ -230,39 +254,46 @@ with tab_graph:
 
         st.divider()
         st.subheader("📊 Node Details Inspector")
-        st.caption("Select a paper node from the graph above to view its full details (concepts, methods, findings)")
-        
+        st.caption(
+            "Select a paper node from the graph above to view its full details (concepts, methods, findings)"
+        )
+
         paper_nodes = [n for n in graph_data["nodes"] if n.get("group") == "paper"]
         if paper_nodes:
+
             def _format_paper_option(node):
                 return f"{node.get('label', 'Unknown')} ({node.get('domain', 'N/A')})"
-            
+
             selected_node = st.selectbox(
                 "View Details",
                 options=paper_nodes,
                 format_func=_format_paper_option,
                 key="node_details_selector",
             )
-            
+
             if selected_node:
                 doc_id = selected_node.get("doc_id")
                 if doc_id:
                     details = queries.get_paper_details(document_id=doc_id)
-                    
+
                     col1, col2, col3, col4 = st.columns(4)
                     col1.metric("💡 Concepts", len(details.get("concepts", [])))
                     col2.metric("⚙️ Methods", len(details.get("methods", [])))
                     col3.metric("🔬 Findings", len(details.get("findings", [])))
                     col4.metric("🧩 Details", len(details.get("details", [])))
-                    
+
                     det_col1, det_col2 = st.columns(2)
-                    
+
                     with det_col1:
                         with st.expander("🧩 Extracted Details", expanded=True):
                             detail_rows = details.get("details", [])
                             if detail_rows:
                                 for d in detail_rows:
-                                    label = (d.get("edge_label") or d.get("category") or "DETAIL").replace("_", " ")
+                                    label = (
+                                        d.get("edge_label")
+                                        or d.get("category")
+                                        or "DETAIL"
+                                    ).replace("_", " ")
                                     st.markdown(f"**{label.title()}**")
                                     st.write(d.get("text", ""))
                                     if d.get("evidence"):
@@ -275,7 +306,11 @@ with tab_graph:
                             concepts = details.get("concepts", [])
                             if concepts:
                                 for c in concepts:
-                                    depth_badge = "🟢 Core" if c["depth"] == "core" else "⚪ Mentioned"
+                                    depth_badge = (
+                                        "🟢 Core"
+                                        if c["depth"] == "core"
+                                        else "⚪ Mentioned"
+                                    )
                                     st.markdown(f"**{c['name']}** ({depth_badge})")
                                     if c.get("description"):
                                         st.caption(f"{c['description']}")
@@ -284,7 +319,7 @@ with tab_graph:
                                     st.divider()
                             else:
                                 st.caption("No concepts found for this paper")
-                        
+
                         with st.expander("⚙️ Methods", expanded=False):
                             methods = details.get("methods", [])
                             if methods:
@@ -295,7 +330,7 @@ with tab_graph:
                                     st.divider()
                             else:
                                 st.caption("No methods found for this paper")
-                    
+
                     with det_col2:
                         with st.expander("🔬 Findings", expanded=False):
                             findings = details.get("findings", [])
@@ -304,7 +339,7 @@ with tab_graph:
                                     evidence_icon = {
                                         "empirical": "📊",
                                         "theoretical": "📐",
-                                        "survey": "📋"
+                                        "survey": "📋",
                                     }.get(f.get("evidence_type", ""), "📝")
                                     st.markdown(f"{evidence_icon} {f['claim']}")
                                     if f.get("evidence_type"):
@@ -336,7 +371,8 @@ with tab_papers:
 
         if selected_doc_id:
             paper_meta = next(
-                (p for p in papers if p["document_id"] == selected_doc_id), {},
+                (p for p in papers if p["document_id"] == selected_doc_id),
+                {},
             )
             cols = st.columns(3)
             cols[0].markdown(f"**Domain:** {paper_meta.get('domain', 'N/A')}")
@@ -359,7 +395,9 @@ with tab_papers:
                 st.markdown("### 🧩 Extracted Details")
                 grouped_details = {}
                 for d in details.get("details", []):
-                    grouped_details.setdefault(d.get("category") or "detail", []).append(d)
+                    grouped_details.setdefault(
+                        d.get("category") or "detail", []
+                    ).append(d)
                 for category, rows in grouped_details.items():
                     st.markdown(f"**{category.replace('_', ' ').title()}**")
                     for d in rows:
@@ -385,9 +423,11 @@ with tab_papers:
             with det_col2:
                 st.markdown("### 🔬 Findings")
                 for f in details["findings"]:
-                    evidence_icon = {"empirical": "📊", "theoretical": "📐", "survey": "📋"}.get(
-                        f.get("evidence_type", ""), "📝"
-                    )
+                    evidence_icon = {
+                        "empirical": "📊",
+                        "theoretical": "📐",
+                        "survey": "📋",
+                    }.get(f.get("evidence_type", ""), "📝")
                     st.markdown(f"- {evidence_icon} {f['claim']}")
 
             st.divider()
@@ -403,13 +443,17 @@ with tab_papers:
                         "and every RAG collection? This cannot be undone."
                     )
                     confirm_cols = st.columns(2)
-                    if confirm_cols[0].button("Confirm delete", key=f"del_confirm_{selected_doc_id}"):
+                    if confirm_cols[0].button(
+                        "Confirm delete", key=f"del_confirm_{selected_doc_id}"
+                    ):
                         kg_stats = queries.delete_paper(selected_doc_id)
                         rag_removed = 0
                         try:
                             vstore_del = VectorStoreManager()
                             for col_name in vstore_del.list_collections():
-                                rag_removed += vstore_del.delete_paper(col_name, selected_doc_id)
+                                rag_removed += vstore_del.delete_paper(
+                                    col_name, selected_doc_id
+                                )
                         except Exception:
                             pass
                         st.session_state.pop(confirm_key, None)
@@ -421,7 +465,9 @@ with tab_papers:
                             f"RAG removed {rag_removed} chunks."
                         )
                         st.rerun()
-                    if confirm_cols[1].button("Cancel", key=f"del_cancel_{selected_doc_id}"):
+                    if confirm_cols[1].button(
+                        "Cancel", key=f"del_cancel_{selected_doc_id}"
+                    ):
                         st.session_state.pop(confirm_key, None)
                         st.rerun()
 
@@ -482,7 +528,9 @@ with tab_concepts:
                 st.markdown("### 📄 Papers discussing this concept")
                 papers_for_concept = queries.get_concept_papers(selected_concept)
                 for p in papers_for_concept:
-                    depth_badge = "🟢 Core" if p.get("depth") == "core" else "⚪ Mentions"
+                    depth_badge = (
+                        "🟢 Core" if p.get("depth") == "core" else "⚪ Mentions"
+                    )
                     st.markdown(f"- **{p['title']}** ({depth_badge})")
 
             with col2:
@@ -502,12 +550,16 @@ with tab_concepts:
                     "No cross-paper finding relationships linked to this concept yet."
                 )
             else:
-                ev_tabs = st.tabs([
-                    f"✅ Supporting ({len(ev['supports'])})",
-                    f"⚡ Contradicting ({len(ev['contradicts'])})",
-                    f"🔄 Extensions ({len(ev['extends'])})",
-                ])
-                for ev_tab, bucket_key in zip(ev_tabs, ("supports", "contradicts", "extends")):
+                ev_tabs = st.tabs(
+                    [
+                        f"✅ Supporting ({len(ev['supports'])})",
+                        f"⚡ Contradicting ({len(ev['contradicts'])})",
+                        f"🔄 Extensions ({len(ev['extends'])})",
+                    ]
+                )
+                for ev_tab, bucket_key in zip(
+                    ev_tabs, ("supports", "contradicts", "extends")
+                ):
                     with ev_tab:
                         items = ev[bucket_key]
                         if not items:
@@ -532,8 +584,8 @@ with tab_relations:
 
     _finding_tabs = [
         (rel_tab1, "CONTRADICTS", "⚡", "contradicting"),
-        (rel_tab2, "SUPPORTS",    "✅", "supporting"),
-        (rel_tab3, "EXTENDS",     "🔄", "extending"),
+        (rel_tab2, "SUPPORTS", "✅", "supporting"),
+        (rel_tab3, "EXTENDS", "🔄", "extending"),
     ]
     for tab, rel_type, emoji, label in _finding_tabs:
         with tab:

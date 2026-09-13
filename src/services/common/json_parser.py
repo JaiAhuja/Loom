@@ -24,7 +24,7 @@ def parse_llm_json(response_text: str) -> dict | None:
     if not isinstance(response_text, str):
         response_text = str(response_text)
 
-    json_pattern = r'```(?:json)?\s*([\s\S]*?)\s*```'
+    json_pattern = r"```(?:json)?\s*([\s\S]*?)\s*```"
     match = re.search(json_pattern, response_text)
 
     if match:
@@ -38,8 +38,8 @@ def parse_llm_json(response_text: str) -> dict | None:
                 normalized_json = re.sub(r"'(\w+)':", r'"\1":', normalized_json)
                 normalized_json = re.sub(r":\s*'([^']*?)'", r': "\1"', normalized_json)
                 normalized_json = re.sub(r'"\s*\n\s*"', r'""', normalized_json)
-                normalized_json = re.sub(r',\s*\n\s*}', r'}', normalized_json)
-                normalized_json = re.sub(r',\s*\n\s*]', r']', normalized_json)
+                normalized_json = re.sub(r",\s*\n\s*}", r"}", normalized_json)
+                normalized_json = re.sub(r",\s*\n\s*]", r"]", normalized_json)
 
                 return json.loads(normalized_json)
             except json.JSONDecodeError:
@@ -48,9 +48,9 @@ def parse_llm_json(response_text: str) -> dict | None:
                     return python_dict
                 except (SyntaxError, ValueError):
                     try:
-                        cleaned_json = re.sub(r'\n\s*', ' ', json_str)
-                        cleaned_json = re.sub(r',\s*}', '}', cleaned_json)
-                        cleaned_json = re.sub(r',\s*]', ']', cleaned_json)
+                        cleaned_json = re.sub(r"\n\s*", " ", json_str)
+                        cleaned_json = re.sub(r",\s*}", "}", cleaned_json)
+                        cleaned_json = re.sub(r",\s*]", "]", cleaned_json)
                         return json.loads(cleaned_json)
                     except json.JSONDecodeError:
                         return {

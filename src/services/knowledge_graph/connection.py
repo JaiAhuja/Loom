@@ -71,7 +71,9 @@ class Neo4jConnection:
         with lock:
             driver = getattr(self, attr)
             if driver is None:
-                driver = factory(self.uri, auth=(self.username, self.password), **kwargs)
+                driver = factory(
+                    self.uri, auth=(self.username, self.password), **kwargs
+                )
                 setattr(self, attr, driver)
             return driver
 
@@ -127,13 +129,13 @@ class Neo4jConnection:
         Args:
             queries: List of (cypher_string, parameters_dict) tuples.
         """
+
         def _work(tx):
             for query, params in queries:
                 tx.run(query, params or {})
 
         with self.driver.session(database=self.database) as session:
             session.execute_write(_work)
-
 
     async def aexecute_read(self, query: str, parameters: dict = None) -> list[dict]:
         """Async version of execute_read — uses a managed read transaction with auto-retry."""
@@ -147,14 +149,13 @@ class Neo4jConnection:
         self, mode: str, query: str, parameters: dict | None
     ) -> list[dict]:
         async with self.async_driver.session(database=self.database) as session:
+
             async def _work(tx):
                 try:
                     result = await tx.run(query, parameters or {})
                     return await result.data()
                 except Exception as exc:
-                    logger.error(
-                        "Async %s query failed: %s", mode, exc, exc_info=True
-                    )
+                    logger.error("Async %s query failed: %s", mode, exc, exc_info=True)
                     raise
 
             return await getattr(session, f"execute_{mode}")(_work)
@@ -169,7 +170,9 @@ class Neo4jConnection:
                         result = await tx.run(q, params or {})
                         await result.consume()
                     except Exception as e:
-                        logger.error(f"Write transaction failed at query {i}: {e}", exc_info=True)
+                        logger.error(
+                            f"Write transaction failed at query {i}: {e}", exc_info=True
+                        )
                         raise
 
             await session.execute_write(_work)
@@ -189,6 +192,7 @@ class Neo4jConnection:
                     self._driver = None
         if self._async_driver is not None:
             import asyncio
+
             with self._async_driver_lock:
                 driver = self._async_driver
                 self._async_driver = None
@@ -210,7 +214,6 @@ class Neo4jConnection:
             task.result()
         except Exception:
             logger.debug("Failed to close async Neo4j driver", exc_info=True)
-
 
 
 _shared_connection: "Neo4jConnection | None" = None

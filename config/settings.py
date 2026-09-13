@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     RAG_FETCH_K: int = 10
     RAG_MMR_LAMBDA: float = 0.4
 
+
 settings = Settings()
 
 

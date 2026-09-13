@@ -10,7 +10,6 @@ from src.services.ingestion.service import FileResult, IngestionResult, Ingestio
 pytestmark = pytest.mark.integration
 
 
-
 def _make_chunk(chunk_type="content", paper="Test Paper"):
     """Return a mock LangChain Document with typical metadata."""
     doc = MagicMock()
@@ -18,14 +17,20 @@ def _make_chunk(chunk_type="content", paper="Test Paper"):
     return doc
 
 
-def _fake_processor(chunks=None, paper_title="Test Paper", markdown="# Test", profile=None):
+def _fake_processor(
+    chunks=None, paper_title="Test Paper", markdown="# Test", profile=None
+):
     """Return a mock DocumentProcessor whose .process() returns canned data.
 
     The mock accepts the extra_metadata kwarg added by the identity step.
     """
     proc = MagicMock()
     if chunks is None:
-        chunks = [_make_chunk("content"), _make_chunk("content"), _make_chunk("summary")]
+        chunks = [
+            _make_chunk("content"),
+            _make_chunk("content"),
+            _make_chunk("summary"),
+        ]
     proc.process.return_value = {
         "chunks": chunks,
         "markdown": markdown,
@@ -47,7 +52,6 @@ def _fake_store(already_indexed: bool = False):
     return store
 
 
-
 def test_ingestion_result_counts():
     """succeeded / failed / skipped properties compute correctly."""
     res = IngestionResult(
@@ -61,7 +65,6 @@ def test_ingestion_result_counts():
     assert res.succeeded == 3
     assert res.failed == 1
     assert res.skipped == 1
-
 
 
 def test_ingest_single_file_rag_only(tmp_path):
@@ -113,7 +116,9 @@ def test_ingest_multiple_files(tmp_path):
         p.write_bytes(b"%PDF-fake")
         files.append(str(p))
 
-    svc = IngestionService(processor=_fake_processor(), store=_fake_store(already_indexed=False))
+    svc = IngestionService(
+        processor=_fake_processor(), store=_fake_store(already_indexed=False)
+    )
     result = svc.ingest_files(file_paths=files, collection_name="col")
 
     assert result.succeeded == 3
@@ -141,7 +146,6 @@ def test_ingest_processor_failure(tmp_path):
     assert fr.error is not None
 
 
-
 def test_progress_callback_called(tmp_path):
     """The on_progress callback is invoked for each step."""
     pdf = tmp_path / "paper.pdf"
@@ -152,7 +156,9 @@ def test_progress_callback_called(tmp_path):
     def recorder(current, total, msg):
         calls.append((current, total, msg))
 
-    svc = IngestionService(processor=_fake_processor(), store=_fake_store(already_indexed=False))
+    svc = IngestionService(
+        processor=_fake_processor(), store=_fake_store(already_indexed=False)
+    )
     svc.ingest_files(
         file_paths=[str(pdf)],
         collection_name="col",
@@ -161,7 +167,6 @@ def test_progress_callback_called(tmp_path):
 
     assert len(calls) >= 2
     assert calls[-1][2] == "Done!"
-
 
 
 def test_default_collection_name(tmp_path):
@@ -176,7 +181,6 @@ def test_default_collection_name(tmp_path):
     store.add_documents.assert_called_once()
     _, kwargs = store.add_documents.call_args
     assert kwargs["collection_name"] == "default"
-
 
 
 def test_already_indexed_skips_all_processing(tmp_path):

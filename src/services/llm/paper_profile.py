@@ -36,7 +36,6 @@ _DETAIL_FIELDS = (
 )
 
 
-
 class ConceptItem(BaseModel):
     name: str
     description: str = ""
@@ -77,14 +76,28 @@ class PaperProfile(BaseModel):
     findings: list[FindingItem] = Field(default_factory=list)
 
 
-
 _STRICT_PRIORITY_KEYWORDS = {
-    "abstract", "introduction", "summary", "synopsis", "executive summary", "highlights",
-    "in brief", "key points",
-    "results", "findings", "outcomes", "observations", "analysis",
-    "conclusion", "concluding remarks", "conclusions", "summary of findings",
-    "implications", "contributions"
+    "abstract",
+    "introduction",
+    "summary",
+    "synopsis",
+    "executive summary",
+    "highlights",
+    "in brief",
+    "key points",
+    "results",
+    "findings",
+    "outcomes",
+    "observations",
+    "analysis",
+    "conclusion",
+    "concluding remarks",
+    "conclusions",
+    "summary of findings",
+    "implications",
+    "contributions",
 }
+
 
 def select_key_sections(text: str, budget: int = 75000) -> str:
     """Pick front matter and high-signal sections (abstract, results, conclusions) up to budget chars."""
@@ -131,7 +144,9 @@ def _safe_file_name(file_name: str) -> str:
 def _response_text(response: Any) -> str:
     """Extract text from a LangChain response object."""
     content = getattr(response, "content", response)
-    return "" if content is None else content if isinstance(content, str) else str(content)
+    return (
+        "" if content is None else content if isinstance(content, str) else str(content)
+    )
 
 
 def _prompt_inputs(markdown_text: str, file_name: str, budget: int) -> dict:
@@ -147,7 +162,10 @@ def _parse_profile_response(response: Any) -> dict | None:
     parsed = parse_llm_json(_response_text(response))
 
     if not isinstance(parsed, dict):
-        logger.warning("Paper profile extraction returned non-object JSON: %s", type(parsed).__name__)
+        logger.warning(
+            "Paper profile extraction returned non-object JSON: %s",
+            type(parsed).__name__,
+        )
         return None
     if "error" in parsed:
         logger.warning("Failed to parse JSON: %s", parsed.get("error", "Unknown error"))
@@ -166,10 +184,11 @@ def _normalise_detail(item):
     return item if isinstance(item, dict) else None
 
 
-_PROMPT_TEMPLATE = ChatPromptTemplate.from_messages([
-    (
-        "system",
-        """### ROLE
+_PROMPT_TEMPLATE = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            """### ROLE
 You are a Senior Research Analyst. Your goal is to deconstruct academic papers into high-fidelity knowledge graphs.
 
 ### EXTRACTION RULES
@@ -190,11 +209,11 @@ You are a Senior Research Analyst. Your goal is to deconstruct academic papers i
 - Return ONLY valid JSON.
 - No conversational filler (e.g., "Sure, here is...")
 - If a field is missing, use null (for numbers) or [] (for arrays).
-"""
-    ),
-    (
-        "human",
-        """### INPUT DATA
+""",
+        ),
+        (
+            "human",
+            """### INPUT DATA
 File: {file_name}
 Content:
 ---
@@ -236,9 +255,10 @@ Analyze the text above and populate the following JSON schema. Ensure the 'summa
         {{"claim": "", "evidence_type": ""}}
     ]
 }}
-"""
-    )
-])
+""",
+        ),
+    ]
+)
 
 
 def extract_paper_profile(
@@ -300,7 +320,8 @@ def _build_profile(parsed: dict) -> Optional[PaperProfile]:
             c["domain"] = canonicalize_domain(c.get("domain", ""))
     for field_name in _DETAIL_FIELDS:
         parsed[field_name] = [
-            detail for item in parsed.get(field_name, []) or []
+            detail
+            for item in parsed.get(field_name, []) or []
             if (detail := _normalise_detail(item)) is not None
         ]
 

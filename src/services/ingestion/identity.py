@@ -34,6 +34,7 @@ def _sanitize_filename(name: str) -> str:
 @dataclass(frozen=True)
 class DocumentIdentity:
     """Immutable identity for a single ingested document."""
+
     document_id: str
     source_md5: str
     ingest_id: str
@@ -56,7 +57,9 @@ def compute_file_hash(file_path: str) -> str:
             for block in iter(lambda: f.read(65_536), b""):
                 h.update(block)
     except OSError as exc:
-        raise DocumentIdentityError(f"Unable to read file for hashing: {file_path!r}") from exc
+        raise DocumentIdentityError(
+            f"Unable to read file for hashing: {file_path!r}"
+        ) from exc
     return h.hexdigest()
 
 
@@ -67,7 +70,9 @@ def make_document_id(original_filename: str) -> str:
     return name_without_ext or "document"
 
 
-def build_identity(file_bytes: bytes, original_filename: str, ingest_id: str) -> DocumentIdentity:
+def build_identity(
+    file_bytes: bytes, original_filename: str, ingest_id: str
+) -> DocumentIdentity:
     """Construct a DocumentIdentity from raw upload bytes.
 
     The provided ``original_filename`` is sanitised — path components and
@@ -104,18 +109,24 @@ def save_upload(file_bytes: bytes, identity: DocumentIdentity, base_dir: str) ->
         dest_dir.mkdir(parents=True, exist_ok=True)
         dest_path = (dest_dir / safe_name).resolve()
     except OSError as exc:
-        raise DocumentIdentityError(f"Unable to prepare upload directory: {base_dir!r}") from exc
+        raise DocumentIdentityError(
+            f"Unable to prepare upload directory: {base_dir!r}"
+        ) from exc
 
     try:
         dest_path.relative_to(base_path)
     except ValueError as exc:
-        raise ValueError(f"Refusing to write upload outside base dir: {str(dest_path)!r}") from exc
+        raise ValueError(
+            f"Refusing to write upload outside base dir: {str(dest_path)!r}"
+        ) from exc
 
     try:
         if not dest_path.exists():
             with open(dest_path, "wb") as f:
                 f.write(file_bytes)
     except OSError as exc:
-        raise DocumentIdentityError(f"Unable to save upload: {str(dest_path)!r}") from exc
+        raise DocumentIdentityError(
+            f"Unable to save upload: {str(dest_path)!r}"
+        ) from exc
 
     return str(dest_path)

@@ -19,7 +19,6 @@ from src.services.ingestion.identity import (
 pytestmark = pytest.mark.unit
 
 
-
 def test_hash_bytes_deterministic():
     """Same bytes always produce the same hash."""
     data = b"hello world"
@@ -49,10 +48,10 @@ def test_compute_file_hash_missing_file_raises_contextual_error(tmp_path):
         assert "Unable to read file" in str(exc)
 
 
-
 def test_make_document_id():
-    assert make_document_id("Self-Supervised Learning.pdf") == "Self-Supervised Learning"
-
+    assert (
+        make_document_id("Self-Supervised Learning.pdf") == "Self-Supervised Learning"
+    )
 
 
 def test_generate_ingest_id_unique():
@@ -67,7 +66,6 @@ def test_generate_ingest_id_format():
     parts = iid.split("-")
     assert len(parts) == 5
     assert len(iid) == 36
-
 
 
 def test_build_identity():
@@ -101,7 +99,6 @@ def test_build_identity_different_filename_different_document_id():
     id2 = build_identity(data, "paper_b.pdf", iid)
     assert id1.document_id != id2.document_id
     assert id1.source_md5 == id2.source_md5
-
 
 
 def test_save_upload_creates_file(tmp_path):
@@ -161,7 +158,6 @@ def test_save_upload_rejects_hand_built_traversal_identity(tmp_path):
     path = save_upload(b"payload", identity, str(tmp_path))
     assert os.path.basename(path) == "evil.pdf"
     assert os.path.commonpath([str(tmp_path), path]) == str(tmp_path)
-
 
 
 def test_document_identity_is_immutable():

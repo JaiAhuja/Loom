@@ -34,22 +34,28 @@ def test_paper_labels_and_statuses():
 
 def test_merge_paper_sources_combines_records_by_document_id():
     papers = merge_paper_sources(
-        rag_papers=[{
-            "document_id": "shared",
-            "title": "Filename title",
-            "domain": "Data Science",
-            "chunk_count": 4,
-        }],
-        kg_papers=[{
-            "document_id": "shared",
-            "title": "Extracted title",
-            "domain": "Data Science",
-            "concept_count": 3,
-        }, {
-            "document_id": "kg-only",
-            "title": "Graph only",
-            "concept_count": 2,
-        }, {"title": "missing id"}],
+        rag_papers=[
+            {
+                "document_id": "shared",
+                "title": "Filename title",
+                "domain": "Data Science",
+                "chunk_count": 4,
+            }
+        ],
+        kg_papers=[
+            {
+                "document_id": "shared",
+                "title": "Extracted title",
+                "domain": "Data Science",
+                "concept_count": 3,
+            },
+            {
+                "document_id": "kg-only",
+                "title": "Graph only",
+                "concept_count": 2,
+            },
+            {"title": "missing id"},
+        ],
     )
     assert papers == [
         Paper("shared", "Filename title", "Data Science", True, True, 4, 3),
@@ -60,7 +66,9 @@ def test_merge_paper_sources_combines_records_by_document_id():
 def test_json_parser_handles_direct_fenced_python_and_invalid_responses():
     expected = {"answer": [1, 2]}
     assert parse_llm_json(json.dumps(expected)) == expected
-    assert parse_llm_json("```json\n{\"answer\": [1, 2]}\n```") == expected
+    assert parse_llm_json('```json\n{"answer": [1, 2]}\n```') == expected
     assert parse_llm_json("```{'answer': [1, 2]}```") == expected
     assert parse_llm_json(None)["error"] == "No response text provided"
-    assert parse_llm_json("not json")["error"] == "No valid JSON content found in response"
+    assert (
+        parse_llm_json("not json")["error"] == "No valid JSON content found in response"
+    )

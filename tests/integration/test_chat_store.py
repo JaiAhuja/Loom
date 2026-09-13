@@ -17,7 +17,6 @@ def _msgs():
     ]
 
 
-
 def test_save_writes_json_with_topic_and_metadata(tmp_path):
     store = ChatStore(directory=str(tmp_path))
     meta = ChatMetadata(model="granite4:tiny-h", temperature=0.2, use_rag=True)
@@ -54,7 +53,6 @@ def test_save_defaults_metadata_when_omitted(tmp_path):
     assert data["metadata"]["use_rag"] is False
 
 
-
 def test_load_roundtrips(tmp_path):
     store = ChatStore(directory=str(tmp_path))
     path = store.save(_msgs(), metadata=ChatMetadata(model="m", temperature=0.3))
@@ -85,7 +83,6 @@ def test_load_tolerates_unknown_metadata_keys(tmp_path):
     assert record.metadata.model == "m"
 
 
-
 def test_list_chats_returns_newest_first(tmp_path):
     store = ChatStore(directory=str(tmp_path))
     p1 = store.save([{"role": "user", "content": "first"}])
@@ -113,14 +110,18 @@ def test_list_chats_includes_legacy_md_as_readonly(tmp_path):
 
 def test_search_matches_topic_and_content(tmp_path):
     store = ChatStore(directory=str(tmp_path))
-    store.save([
-        {"role": "user", "content": "transformers question"},
-        {"role": "assistant", "content": "..."},
-    ])
-    store.save([
-        {"role": "user", "content": "totally unrelated"},
-        {"role": "assistant", "content": "rag pipelines are cool"},
-    ])
+    store.save(
+        [
+            {"role": "user", "content": "transformers question"},
+            {"role": "assistant", "content": "..."},
+        ]
+    )
+    store.save(
+        [
+            {"role": "user", "content": "totally unrelated"},
+            {"role": "assistant", "content": "rag pipelines are cool"},
+        ]
+    )
 
     topic_hits = store.search("transformers")
     content_hits = store.search("rag")

@@ -56,7 +56,9 @@ def test_singleton_init_is_thread_safe(monkeypatch):
     monkeypatch.setattr(connection_module, "Neo4jConnection", DummyConnection)
 
     with ThreadPoolExecutor(max_workers=8) as pool:
-        conns = list(pool.map(lambda _: connection_module.get_neo4j_connection(), range(20)))
+        conns = list(
+            pool.map(lambda _: connection_module.get_neo4j_connection(), range(20))
+        )
 
     assert calls == 1
     assert len({id(conn) for conn in conns}) == 1

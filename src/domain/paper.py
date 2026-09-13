@@ -94,15 +94,18 @@ def merge_paper_sources(
         doc_id = k.get("document_id")
         if not doc_id:
             continue
-        entry = merged.setdefault(doc_id, {
-            "document_id": doc_id,
-            "title": k.get("title", doc_id),
-            "domain": k.get("domain", ""),
-            "in_rag": False,
-            "in_kg": False,
-            "chunk_count": 0,
-            "concept_count": 0,
-        })
+        entry = merged.setdefault(
+            doc_id,
+            {
+                "document_id": doc_id,
+                "title": k.get("title", doc_id),
+                "domain": k.get("domain", ""),
+                "in_rag": False,
+                "in_kg": False,
+                "chunk_count": 0,
+                "concept_count": 0,
+            },
+        )
         entry["in_kg"] = True
         entry["concept_count"] = k.get("concept_count", 0)
         if not entry.get("title"):

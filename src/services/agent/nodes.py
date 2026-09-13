@@ -136,10 +136,12 @@ def create_agent_node(llm, tools: list, system_prompt: str):
     else:
         llm_with_tools = llm
 
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", system_prompt),
-        MessagesPlaceholder(variable_name="messages"),
-    ])
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            ("system", system_prompt),
+            MessagesPlaceholder(variable_name="messages"),
+        ]
+    )
     chain = prompt | llm_with_tools
 
     def agent_node(state: AgentState) -> dict:

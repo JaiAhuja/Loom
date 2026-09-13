@@ -25,7 +25,9 @@ class FakeCollection:
         self.rows = {}
 
     def upsert(self, ids, documents, metadatas, embeddings):
-        for row_id, text, metadata, embedding in zip(ids, documents, metadatas, embeddings):
+        for row_id, text, metadata, embedding in zip(
+            ids, documents, metadatas, embeddings
+        ):
             self.rows[row_id] = {
                 "id": row_id,
                 "document": text,
@@ -36,7 +38,11 @@ class FakeCollection:
     def get(self, where=None, include=None, limit=None):
         rows = list(self.rows.values())
         if where:
-            rows = [row for row in rows if all(row["metadata"].get(k) == v for k, v in where.items())]
+            rows = [
+                row
+                for row in rows
+                if all(row["metadata"].get(k) == v for k, v in where.items())
+            ]
         if limit:
             rows = rows[:limit]
         result = {"ids": [row["id"] for row in rows]}
@@ -73,28 +79,50 @@ class FakeEmbeddings:
 
 def test_vector_store_persists_and_manages_document_metadata(monkeypatch, tmp_path):
     client = FakeClient()
-    monkeypatch.setattr("src.services.retrieval.store.chromadb.PersistentClient", lambda path: client)
+    monkeypatch.setattr(
+        "src.services.retrieval.store.chromadb.PersistentClient", lambda path: client
+    )
     store = VectorStoreManager(persist_dir=str(tmp_path))
     store._embeddings = FakeEmbeddings()
     documents = [
-        Document("summary", {"chunk_id": "one", "document_id": "paper", "paper": "Paper", "domain": "AI"}),
-        Document("body", {"chunk_id": "two", "document_id": "paper", "paper": "Paper", "domain": "AI"}),
+        Document(
+            "summary",
+            {
+                "chunk_id": "one",
+                "document_id": "paper",
+                "paper": "Paper",
+                "domain": "AI",
+            },
+        ),
+        Document(
+            "body",
+            {
+                "chunk_id": "two",
+                "document_id": "paper",
+                "paper": "Paper",
+                "domain": "AI",
+            },
+        ),
     ]
 
     store.add_documents(documents, collection_name="notes")
     assert store.get_collection_count("notes") == 2
-    assert store.list_papers("notes") == [{
-        "document_id": "paper",
-        "title": "Paper",
-        "domain": "AI",
-        "chunk_count": 2,
-    }]
+    assert store.list_papers("notes") == [
+        {
+            "document_id": "paper",
+            "title": "Paper",
+            "domain": "AI",
+            "chunk_count": 2,
+        }
+    ]
     assert store.is_document_indexed("notes", "paper") is True
     assert store.delete_paper("notes", "paper") == 2
     assert store.get_collection_count("notes") == 0
 
 
-def test_document_processor_builds_summary_and_deterministic_chunks(monkeypatch, tmp_path):
+def test_document_processor_builds_summary_and_deterministic_chunks(
+    monkeypatch, tmp_path
+):
     class FakeDocument:
         def export_to_markdown(self):
             return "# Paper\nBody"
@@ -108,7 +136,9 @@ def test_document_processor_builds_summary_and_deterministic_chunks(monkeypatch,
 
     monkeypatch.chdir(tmp_path)
     processor = DocumentProcessor()
-    processor._converter = SimpleNamespace(convert=lambda path: SimpleNamespace(document=FakeDocument()))
+    processor._converter = SimpleNamespace(
+        convert=lambda path: SimpleNamespace(document=FakeDocument())
+    )
     processor._chunker = FakeChunker()
     progress = []
 
@@ -123,7 +153,9 @@ def test_document_processor_builds_summary_and_deterministic_chunks(monkeypatch,
     assert len(result["chunks"]) == 2
     assert result["chunks"][0].metadata["paper_chunk"] == "chunk_001"
     assert result["chunks"][0].metadata["document_id"] == "paper-1"
-    assert result["chunks"][0].metadata["chunk_id"] == processor.generate_chunk_id("paper-1", "chunk_001")
+    assert result["chunks"][0].metadata["chunk_id"] == processor.generate_chunk_id(
+        "paper-1", "chunk_001"
+    )
     assert (tmp_path / "data/txt/My Paper.md").read_text() == "# Paper\nBody"
     assert progress == [
         "Converting PDF → document structure (My Paper.pdf)...",
@@ -147,7 +179,9 @@ def test_graph_schema_initialization_and_queries_use_parameterized_contracts():
     schema.initialize_schema(connection)
     assert len(calls) == 12
     assert schema.make_concept_key(" Attention ", "nlp") == "ai:attention"
-    assert schema.make_finding_key("Paper", "Claim") == schema.make_finding_key(" paper ", " claim ")
+    assert schema.make_finding_key("Paper", "Claim") == schema.make_finding_key(
+        " paper ", " claim "
+    )
 
     queries = KnowledgeGraphQueries(connection)
     assert queries.get_all_papers() == [{"document_id": "paper-1"}]

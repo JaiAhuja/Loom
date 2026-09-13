@@ -24,7 +24,7 @@ def render_brand() -> None:
         '<div class="brand-icon">🪡</div>'
         '<div class="brand-name">Loom</div>'
         '<div class="brand-tag">Weaving threads of knowledge together</div>'
-        '</div>',
+        "</div>",
         unsafe_allow_html=True,
     )
 
@@ -40,10 +40,14 @@ def render_status_bar(
     if collection_name:
         chips.append(f'<span class="status-chip">📄 {escape(collection_name)}</span>')
         if paper_filter:
-            chips.append(f'<span class="status-chip">📑 {escape(paper_filter[:30])}</span>')
+            chips.append(
+                f'<span class="status-chip">📑 {escape(paper_filter[:30])}</span>'
+            )
     if use_graph:
         chips.append('<span class="status-chip">🔗 Graph</span>')
-    st.markdown(f'<div class="status-bar">{"".join(chips)}</div>', unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="status-bar">{"".join(chips)}</div>', unsafe_allow_html=True
+    )
 
 
 def render_hero() -> None:
@@ -52,7 +56,7 @@ def render_hero() -> None:
         '<div class="hero-icon">🪡</div>'
         '<div class="hero-title">Loom</div>'
         '<div class="hero-subtitle">Weaving threads of knowledge together</div>'
-        '</div>',
+        "</div>",
         unsafe_allow_html=True,
     )
     st.markdown(
@@ -66,18 +70,18 @@ def render_hero() -> None:
         '  <div class="feature-card"><div class="card-icon">🔗</div>'
         '    <div class="card-title">Knowledge Graph</div>'
         '    <div class="card-desc">Discover cross-paper relationships, shared concepts & contradictions</div></div>'
-        '</div>',
+        "</div>",
         unsafe_allow_html=True,
     )
     st.markdown(
         '<div class="quick-start">'
-        '<p>💡 Try asking something like:</p>'
+        "<p>💡 Try asking something like:</p>"
         '<div class="pill-row">'
         '  <span class="pill">Explain MapReduce vs Spark</span>'
         '  <span class="pill">What is the attention mechanism?</span>'
         '  <span class="pill">Compare SQL & NoSQL databases</span>'
         '  <span class="pill">How does RAG work?</span>'
-        '</div></div>',
+        "</div></div>",
         unsafe_allow_html=True,
     )
 

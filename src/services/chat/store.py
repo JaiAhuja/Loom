@@ -1,4 +1,4 @@
-﻿"""Structured chat-history persistence.
+"""Structured chat-history persistence.
 
 Chats are saved as JSON under ``data/chat_history/`` with a small metadata
 header plus the raw message list. Legacy ``.md`` files that may already exist
@@ -83,7 +83,11 @@ def _normalise_messages(messages: Any) -> list[dict]:
 
 
 def _normalise_message(msg: dict) -> dict:
-    role = msg.get("role") if msg.get("role") in {"user", "assistant", "system", "tool"} else "assistant"
+    role = (
+        msg.get("role")
+        if msg.get("role") in {"user", "assistant", "system", "tool"}
+        else "assistant"
+    )
     content = msg.get("content")
     return {"role": role, "content": content if isinstance(content, str) else ""}
 
@@ -97,7 +101,9 @@ def _record_payload(record: ChatRecord) -> dict:
     }
 
 
-def _entry(name: str, path: str, topic: str, kind: str, metadata: dict | None = None) -> dict:
+def _entry(
+    name: str, path: str, topic: str, kind: str, metadata: dict | None = None
+) -> dict:
     return {
         "filename": name,
         "path": path,
@@ -166,12 +172,15 @@ class ChatStore:
             path = self._path_for(
                 f"{now.strftime('%Y%m%d-%H%M%S')}-{_slugify(topic)}.json"
             )
-        self._write_record(path, ChatRecord(
-            topic=topic,
-            messages=_normalise_messages(messages),
-            metadata=metadata or ChatMetadata(),
-            saved_at=saved_at,
-        ))
+        self._write_record(
+            path,
+            ChatRecord(
+                topic=topic,
+                messages=_normalise_messages(messages),
+                metadata=metadata or ChatMetadata(),
+                saved_at=saved_at,
+            ),
+        )
         return path
 
     def _write_record(self, path: str, record: ChatRecord) -> None:
@@ -227,10 +236,16 @@ class ChatStore:
                         metadata = {}
                     entries.append(_entry(name, path, topic, "json", metadata))
                 except (OSError, json.JSONDecodeError):
-                    logger.debug("Skipping unreadable chat history file: %s", path, exc_info=True)
+                    logger.debug(
+                        "Skipping unreadable chat history file: %s", path, exc_info=True
+                    )
                     continue
             elif name.endswith(".md"):
-                entries.append(_entry(name, path, os.path.splitext(name)[0].replace("-", " "), "md"))
+                entries.append(
+                    _entry(
+                        name, path, os.path.splitext(name)[0].replace("-", " "), "md"
+                    )
+                )
 
         entries.sort(key=lambda e: e["modified"], reverse=True)
         return entries
@@ -249,7 +264,11 @@ class ChatStore:
                 try:
                     record = self.load(entry["filename"])
                 except Exception:
-                    logger.debug("Skipping unreadable chat during search: %s", entry["filename"], exc_info=True)
+                    logger.debug(
+                        "Skipping unreadable chat during search: %s",
+                        entry["filename"],
+                        exc_info=True,
+                    )
                     continue
                 if any(q in (m.get("content") or "").lower() for m in record.messages):
                     hits.append(entry)
@@ -259,7 +278,11 @@ class ChatStore:
                         if q in f.read().lower():
                             hits.append(entry)
                 except OSError:
-                    logger.debug("Skipping unreadable markdown chat during search: %s", entry["path"], exc_info=True)
+                    logger.debug(
+                        "Skipping unreadable markdown chat during search: %s",
+                        entry["path"],
+                        exc_info=True,
+                    )
         return hits
 
     def render_markdown(self, filename: str) -> str:

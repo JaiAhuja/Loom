@@ -3,7 +3,11 @@ import logging
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
 
-from src.services.agent.nodes import build_system_prompt, create_agent_node, should_continue
+from src.services.agent.nodes import (
+    build_system_prompt,
+    create_agent_node,
+    should_continue,
+)
 from src.services.agent.state import AgentState
 from src.services.llm import get_llm
 from src.services.knowledge_graph.connection import Neo4jConnection
@@ -53,8 +57,13 @@ class GraphBuilder:
         """
         llm = get_llm(model=model, temperature=temperature)
         tools = self._gather_tools(
-            use_rag, use_graph, collection_name, model,
-            neo4j_conn, vector_store, document_id,
+            use_rag,
+            use_graph,
+            collection_name,
+            model,
+            neo4j_conn,
+            vector_store,
+            document_id,
         )
         system_prompt = build_system_prompt(use_rag, use_graph)
 
@@ -92,11 +101,13 @@ class GraphBuilder:
         tools = []
 
         if use_rag and collection_name:
-            tools.append(create_rag_tool(
-                collection_name,
-                store=vector_store,
-                document_id=document_id,
-            ))
+            tools.append(
+                create_rag_tool(
+                    collection_name,
+                    store=vector_store,
+                    document_id=document_id,
+                )
+            )
 
         if use_graph:
             if neo4j_conn is not None:

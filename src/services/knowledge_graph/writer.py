@@ -39,10 +39,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-_FINDING_LINKS_PROMPT = ChatPromptTemplate.from_messages([
-    (
-        "system",
-        """You are a scientific knowledge graph assistant specialising in cross-paper relationship detection.
+_FINDING_LINKS_PROMPT = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            """You are a scientific knowledge graph assistant specialising in cross-paper relationship detection.
 
 Your task is to compare two sets of research findings and identify semantic relationships between them.
 
@@ -58,25 +59,27 @@ OUTPUT INSTRUCTIONS:
     "target" — the finding_key of the existing finding
     "relation" — one of SUPPORTS, CONTRADICTS, or EXTENDS
 - If no relationships exist, return an empty array: []
-- No markdown fences, no prose, no commentary — raw JSON only."""
-    ),
-    (
-        "human",
-        """NEW FINDINGS (just added to the graph):
+- No markdown fences, no prose, no commentary — raw JSON only.""",
+        ),
+        (
+            "human",
+            """NEW FINDINGS (just added to the graph):
 {new_findings_json}
 
 EXISTING FINDINGS (from other papers already in the graph):
 {existing_findings_json}
 
-Identify all pairs where a new finding SUPPORTS, CONTRADICTS, or EXTENDS an existing finding."""
-    ),
-])
+Identify all pairs where a new finding SUPPORTS, CONTRADICTS, or EXTENDS an existing finding.""",
+        ),
+    ]
+)
 
 
-_CONCEPT_LINKS_PROMPT = ChatPromptTemplate.from_messages([
-    (
-        "system",
-        """You are a scientific knowledge graph assistant specialising in concept relationship detection.
+_CONCEPT_LINKS_PROMPT = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            """You are a scientific knowledge graph assistant specialising in concept relationship detection.
 
 Your task is to compare two sets of research concepts and identify semantic relationships between them.
 
@@ -97,20 +100,21 @@ OUTPUT INSTRUCTIONS:
     "target" — the concept_key of the existing concept
     "relation" — one of RELATED_TO, SUBTOPIC_OF, or EXTENDS
 - If no relationships exist, return an empty array: []
-- No markdown fences, no prose, no commentary — raw JSON only."""
-    ),
-    (
-        "human",
-        """NEW CONCEPTS (just added to the graph):
+- No markdown fences, no prose, no commentary — raw JSON only.""",
+        ),
+        (
+            "human",
+            """NEW CONCEPTS (just added to the graph):
 {new_concepts_json}
 
 EXISTING CONCEPTS (from other papers already in the graph, same domain):
 {existing_concepts_json}
 
-Identify all pairs where a new concept is RELATED_TO, SUBTOPIC_OF, or EXTENDS an existing concept. 
-Focus on scientifically meaningful relationships."""
-    ),
-])
+Identify all pairs where a new concept is RELATED_TO, SUBTOPIC_OF, or EXTENDS an existing concept.
+Focus on scientifically meaningful relationships.""",
+        ),
+    ]
+)
 
 
 class KnowledgeGraphWriter:
@@ -124,7 +128,6 @@ class KnowledgeGraphWriter:
     def __init__(self, conn: Neo4jConnection) -> None:
         self._conn = conn
         self._schema_ready = False
-
 
     def is_paper_in_kg(self, document_id: str) -> bool:
         """Return True if a Paper node for this document_id already exists in Neo4j."""
@@ -323,7 +326,6 @@ class KnowledgeGraphWriter:
         )
         return self._write_links(relations, CONCEPT, "concept_key", "concept")
 
-
     def _ensure_schema(self) -> None:
         if not self._schema_ready:
             initialize_schema(self._conn)
@@ -354,7 +356,11 @@ class KnowledgeGraphWriter:
             ("contribution", "CONTRIBUTES", getattr(profile, "contributions", [])),
             ("stands_for", "STANDS_FOR", getattr(profile, "stands_for", [])),
             ("builds_on", "BUILDS_ON", getattr(profile, "builds_on", [])),
-            ("does_not_support", "DOES_NOT_SUPPORT", getattr(profile, "does_not_support", [])),
+            (
+                "does_not_support",
+                "DOES_NOT_SUPPORT",
+                getattr(profile, "does_not_support", []),
+            ),
             ("limitation", "HAS_LIMITATION", getattr(profile, "limitations", [])),
         ]
         items: list[dict] = []
@@ -364,18 +370,20 @@ class KnowledgeGraphWriter:
                 if not text:
                     continue
                 raw_key = f"{document_id}:{category}:{index}:{text.lower()}"
-                items.append({
-                    "detail_key": hashlib.md5(
-                        raw_key.encode(), usedforsecurity=False
-                    ).hexdigest(),
-                    "category": category,
-                    "edge_label": edge_label,
-                    "text": text,
-                    "evidence": (getattr(detail, "evidence", "") or "").strip(),
-                    "paper_document_id": document_id,
-                    "paper_title": profile.title or document_id,
-                    "position": index,
-                })
+                items.append(
+                    {
+                        "detail_key": hashlib.md5(
+                            raw_key.encode(), usedforsecurity=False
+                        ).hexdigest(),
+                        "category": category,
+                        "edge_label": edge_label,
+                        "text": text,
+                        "evidence": (getattr(detail, "evidence", "") or "").strip(),
+                        "paper_document_id": document_id,
+                        "paper_title": profile.title or document_id,
+                        "position": index,
+                    }
+                )
 
         queries: list[tuple[str, dict]] = [
             (
@@ -385,8 +393,9 @@ class KnowledgeGraphWriter:
             )
         ]
         if items:
-            queries.append((
-                f"""UNWIND $items AS item
+            queries.append(
+                (
+                    f"""UNWIND $items AS item
                 MATCH (p:{PAPER} {{document_id: $document_id}})
                 MERGE (d:{DETAIL} {{detail_key: item.detail_key}})
                 SET d.category = item.category,
@@ -398,8 +407,9 @@ class KnowledgeGraphWriter:
                 MERGE (p)-[r:{HAS_DETAIL}]->(d)
                 SET r.label = item.edge_label,
                     r.category = item.category""",
-                {"document_id": document_id, "items": items},
-            ))
+                    {"document_id": document_id, "items": items},
+                )
+            )
         self._conn.execute_write_tx(queries)
 
     def _write_concepts(self, profile: "PaperProfile", document_id: str) -> None:
@@ -434,8 +444,7 @@ class KnowledgeGraphWriter:
         if not profile.methods:
             return
         items = [
-            {"name": m.name, "description": m.description}
-            for m in profile.methods
+            {"name": m.name, "description": m.description} for m in profile.methods
         ]
         self._conn.execute_write(
             f"""UNWIND $items AS item
@@ -466,8 +475,9 @@ class KnowledgeGraphWriter:
             )
         ]
         if items:
-            queries.append((
-                f"""UNWIND $items AS item
+            queries.append(
+                (
+                    f"""UNWIND $items AS item
                 MATCH (p:{PAPER} {{document_id: $document_id}})
                 CREATE (f:{FINDING} {{
                     finding_key: item.finding_key,
@@ -477,12 +487,13 @@ class KnowledgeGraphWriter:
                     paper_title: $paper_title
                 }})
                 CREATE (p)-[:{HAS_FINDING}]->(f)""",
-                {
-                    "document_id": document_id,
-                    "paper_title": paper_title,
-                    "items": items,
-                },
-            ))
+                    {
+                        "document_id": document_id,
+                        "paper_title": paper_title,
+                        "items": items,
+                    },
+                )
+            )
         self._conn.execute_write_tx(queries)
 
     @staticmethod
@@ -497,14 +508,21 @@ class KnowledgeGraphWriter:
         """Ask the LLM for validated relationship triples."""
         chain = prompt | get_llm(model=model, temperature=0.0, require_json=True)
         try:
-            parsed = parse_llm_json(chain.invoke({
-                f"new_{item_name}_json": json.dumps(new_items, indent=2),
-                f"existing_{item_name}_json": json.dumps(existing_items, indent=2),
-            }).content)
+            parsed = parse_llm_json(
+                chain.invoke(
+                    {
+                        f"new_{item_name}_json": json.dumps(new_items, indent=2),
+                        f"existing_{item_name}_json": json.dumps(
+                            existing_items, indent=2
+                        ),
+                    }
+                ).content
+            )
             if not isinstance(parsed, list):
                 return []
             return [
-                relation for relation in parsed
+                relation
+                for relation in parsed
                 if isinstance(relation, dict)
                 and relation.get("relation") in allowed_relations
                 and relation.get("source")
@@ -528,7 +546,7 @@ class KnowledgeGraphWriter:
             (
                 f"""MATCH (src:{node_label} {{{key_property}: $source}})
                 MATCH (tgt:{node_label} {{{key_property}: $target}})
-                MERGE (src)-[:{relation['relation']}]->(tgt)""",
+                MERGE (src)-[:{relation["relation"]}]->(tgt)""",
                 {"source": relation["source"], "target": relation["target"]},
             )
             for relation in relations
