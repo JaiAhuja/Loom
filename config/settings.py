@@ -11,8 +11,6 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    APP_ENV: str = "dev"
-
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     OLLAMA_MODEL: str = "granite4:tiny-h"
     OLLAMA_EMBEDDING_MODEL: str = "qwen3-embedding:4b"
@@ -38,15 +36,6 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-
-
-def validate_runtime_settings(config: Settings = settings) -> None:
-    """Validate environment-sensitive settings before a service starts."""
-    environment = config.APP_ENV.strip().lower()
-    if environment not in {"dev", "test", "prod"}:
-        raise ValueError("APP_ENV must be one of: dev, test, prod")
-    if environment == "prod" and not config.NEO4J_PASSWORD:
-        raise ValueError("NEO4J_PASSWORD is required when APP_ENV=prod")
 
 
 def configure_langsmith() -> bool:

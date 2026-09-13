@@ -158,8 +158,7 @@ All settings are read from `.env` through `config/settings.py`.
 | `RAG_TOP_K` | `5` | Retrieved chunks per query |
 | `NEO4J_URI` | `bolt://127.0.0.1:7687` | Neo4j connection URI |
 | `NEO4J_USERNAME` | `neo4j` | Neo4j username |
-| `APP_ENV` | `dev` | Runtime profile: `dev`, `test`, or `prod` |
-| `NEO4J_PASSWORD` | unset | Required for Neo4j use; required at startup when `APP_ENV=prod` |
+| `NEO4J_PASSWORD` | unset | Required before creating a Neo4j connection |
 | `NEO4J_DATABASE` | unset | Optional named database |
 
 ### LangSmith (optional)

@@ -4,7 +4,7 @@ import threading
 
 from neo4j import AsyncGraphDatabase, GraphDatabase
 
-from config.settings import settings, validate_runtime_settings
+from config.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,6 @@ class Neo4jConnection:
     ):
         self.uri = uri or settings.NEO4J_URI
         self.username = username or settings.NEO4J_USERNAME
-        validate_runtime_settings()
         self.password = password if password is not None else settings.NEO4J_PASSWORD
         if not self.password:
             raise ValueError("NEO4J_PASSWORD must be configured before creating a Neo4j connection")
