@@ -11,7 +11,7 @@ from pyvis.network import Network
 from src.domain import Paper
 from src.domain.paper import merge_paper_sources
 from src.services.knowledge_graph import KnowledgeGraphQueries, get_neo4j_connection
-from src.services.retrieval import VectorStoreManager
+from src.services.ui.bootstrap import get_vector_store
 
 st.set_page_config(
     page_title="Knowledge Graph - Loom",
@@ -72,10 +72,13 @@ if stats.get("papers", 0) == 0:
     )
     st.stop()
 
+all_papers = queries.get_all_papers() or []
+all_concepts = queries.get_all_concepts() or []
+
 
 with st.expander("📚 All papers across stores (RAG ∪ KG)", expanded=False):
     try:
-        vstore = VectorStoreManager()
+        vstore = get_vector_store()
         rag_papers_all: list[dict] = []
         for col_name in vstore.list_collections():
             for p in vstore.list_papers(col_name):
@@ -90,7 +93,7 @@ with st.expander("📚 All papers across stores (RAG ∪ KG)", expanded=False):
     except Exception:
         rag_papers_all = []
 
-    _kg_rows = queries.get_all_papers() or []
+    _kg_rows = all_papers
     kg_papers = [
         {
             "document_id": p.get("document_id"),
@@ -137,8 +140,8 @@ with tab_graph:
     st.caption("Papers (large nodes) connected to concepts, methods, findings, and typed paper-detail nodes.")
 
     with st.expander("🔧 Filters", expanded=False):
-        _all_papers_for_filter = queries.get_all_papers()
-        _all_concepts_for_filter = queries.get_all_concepts()
+        _all_papers_for_filter = all_papers
+        _all_concepts_for_filter = all_concepts
         _all_domains = sorted({c.get("domain") for c in _all_concepts_for_filter if c.get("domain")})
 
         f_col1, f_col2, f_col3 = st.columns(3)
@@ -328,7 +331,7 @@ with tab_graph:
 with tab_papers:
     st.subheader("Paper Explorer")
 
-    papers = queries.get_all_papers()
+    papers = all_papers
     if not papers:
         st.info("No papers indexed yet.")
     else:
@@ -422,7 +425,7 @@ with tab_papers:
                         kg_stats = queries.delete_paper(selected_doc_id)
                         rag_removed = 0
                         try:
-                            vstore_del = VectorStoreManager()
+                            vstore_del = get_vector_store()
                             for col_name in vstore_del.list_collections():
                                 rag_removed += vstore_del.delete_paper(col_name, selected_doc_id)
                         except Exception:
@@ -468,7 +471,7 @@ with tab_papers:
 with tab_concepts:
     st.subheader("Concept Explorer")
 
-    concepts = queries.get_all_concepts()
+    concepts = all_concepts
     if not concepts:
         st.info("No concepts extracted yet.")
     else:

@@ -209,11 +209,7 @@ class IngestionService:
                 fr.skipped = True
                 fr.success = True
 
-                papers = self.store.list_papers(collection_name)
-                paper_meta = next(
-                    (p for p in papers if p["document_id"] == identity.document_id),
-                    None,
-                )
+                paper_meta = self.store.get_paper(collection_name, identity.document_id)
                 fr.paper_title = paper_meta["title"] if paper_meta else identity.document_id
                 fr.content_chunks = paper_meta["chunk_count"] if paper_meta else 0
 
@@ -260,11 +256,16 @@ class IngestionService:
                 continue
 
             chunks, raw_result = proc_result
-            content_count = sum(1 for c in chunks if c.metadata.get("chunk_type") == "content")
+            content_count = 0
+            has_summary = False
+            for chunk in chunks:
+                chunk_type = chunk.metadata.get("chunk_type")
+                content_count += chunk_type == "content"
+                has_summary = has_summary or chunk_type == "summary"
             fr.success = True
             fr.paper_title = raw_result.get("paper_title", file_name)
             fr.content_chunks = content_count
-            fr.has_summary = any(c.metadata.get("chunk_type") == "summary" for c in chunks)
+            fr.has_summary = has_summary
 
             profile = raw_result.get("profile")
             if profile is not None:

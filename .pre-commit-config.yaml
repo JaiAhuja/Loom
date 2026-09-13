@@ -16,6 +16,15 @@ repos:
           - --branch
           - main
 
+  - repo: local
+    hooks:
+      - id: inline-comments
+        name: Enforce inline Python comments
+        entry: python scripts/check_inline_comments.py --fix
+        language: system
+        types: [python]
+        require_serial: true
+
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.9.10
     hooks:

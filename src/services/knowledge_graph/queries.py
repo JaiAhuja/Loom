@@ -1,5 +1,3 @@
-import asyncio
-
 from src.services.knowledge_graph.connection import Neo4jConnection
 from src.services.knowledge_graph.schema import (
     AUTHOR,
@@ -27,26 +25,35 @@ RETURN p.document_id AS document_id, p.title AS title,
        p.authors_str AS authors, count(c) AS concept_count
 ORDER BY p.title"""
 
-_PAPER_DETAILS_QUERIES = (
-    f"""MATCH (p:{PAPER})-[r:{DISCUSSES}]->(c:{CONCEPT})
-    WHERE p.document_id = $key OR p.title = $key
-    RETURN c.name AS name, c.description AS description,
-           c.domain AS domain, r.depth AS depth
-    ORDER BY r.depth, c.name""",
-    f"""MATCH (p:{PAPER})-[:{USES_METHOD}]->(m:{METHOD})
-    WHERE p.document_id = $key OR p.title = $key
-    RETURN m.name AS name, m.description AS description""",
-    f"""MATCH (p:{PAPER})-[:{HAS_FINDING}]->(f:{FINDING})
-    WHERE p.document_id = $key OR p.title = $key
-    RETURN f.claim AS claim, f.evidence_type AS evidence_type""",
-    f"""MATCH (p:{PAPER})-[r:{HAS_DETAIL}]->(d:{DETAIL})
-    WHERE p.document_id = $key OR p.title = $key
-    RETURN d.category AS category, d.text AS text,
-           d.evidence AS evidence, r.label AS edge_label,
-           d.position AS position
-    ORDER BY d.category, d.position""",
-)
 _DETAIL_KEYS = ("concepts", "methods", "findings", "details")
+_PAPER_DETAILS_QUERY = f"""
+CALL {{
+    MATCH (p:{PAPER})-[r:{DISCUSSES}]->(c:{CONCEPT})
+    WHERE p.document_id = $key OR p.title = $key
+    WITH c, r ORDER BY r.depth, c.name
+    RETURN collect({{name: c.name, description: c.description,
+                    domain: c.domain, depth: r.depth}}) AS concepts
+}}
+CALL {{
+    MATCH (p:{PAPER})-[:{USES_METHOD}]->(m:{METHOD})
+    WHERE p.document_id = $key OR p.title = $key
+    RETURN collect({{name: m.name, description: m.description}}) AS methods
+}}
+CALL {{
+    MATCH (p:{PAPER})-[:{HAS_FINDING}]->(f:{FINDING})
+    WHERE p.document_id = $key OR p.title = $key
+    RETURN collect({{claim: f.claim, evidence_type: f.evidence_type}}) AS findings
+}}
+CALL {{
+    MATCH (p:{PAPER})-[r:{HAS_DETAIL}]->(d:{DETAIL})
+    WHERE p.document_id = $key OR p.title = $key
+    WITH d, r ORDER BY d.category, d.position
+    RETURN collect({{category: d.category, text: d.text,
+                    evidence: d.evidence, edge_label: r.label,
+                    position: d.position}}) AS details
+}}
+RETURN concepts, methods, findings, details
+"""
 
 _CONCEPTS_QUERY = f"""MATCH (c:{CONCEPT})
 OPTIONAL MATCH (p:{PAPER})-[:{DISCUSSES}]->(c)
@@ -59,6 +66,25 @@ WHERE type(r) IN ['{RELATED_TO}', '{SUBTOPIC_OF}', '{EXTENDS}']
 RETURN c2.name AS name, c2.description AS description,
        c2.domain AS domain, type(r) AS relation_type
 ORDER BY c2.name"""
+
+_CONCEPT_HIERARCHY_QUERY = f"""
+CALL {{
+    MATCH (c1:{CONCEPT})<-[:{SUBTOPIC_OF}]-(c2:{CONCEPT} {{name: $name}})
+    RETURN collect({{name: c1.name, description: c1.description,
+                    domain: c1.domain}}) AS prerequisites
+}}
+CALL {{
+    MATCH (c1:{CONCEPT} {{name: $name}})-[:{RELATED_TO}]-(c2:{CONCEPT})
+    RETURN collect({{name: c2.name, description: c2.description,
+                    domain: c2.domain}}) AS related
+}}
+CALL {{
+    MATCH (c1:{CONCEPT} {{name: $name}})-[:{EXTENDS}]->(c2:{CONCEPT})
+    RETURN collect({{name: c2.name, description: c2.description,
+                    domain: c2.domain}}) AS extensions
+}}
+RETURN prerequisites, related, extensions
+"""
 
 _STATS_QUERY = f"""OPTIONAL MATCH (p:{PAPER}) WITH count(p) AS papers
 OPTIONAL MATCH (c:{CONCEPT}) WITH papers, count(c) AS concepts
@@ -93,11 +119,10 @@ class KnowledgeGraphQueries:
         """
         if not document_id:
             return {key: [] for key in _DETAIL_KEYS}
-        params = {"key": document_id}
-        return {
-            key: self.conn.execute_read(query, params)
-            for key, query in zip(_DETAIL_KEYS, _PAPER_DETAILS_QUERIES)
-        }
+        rows = self.conn.execute_read(_PAPER_DETAILS_QUERY, {"key": document_id})
+        if not rows:
+            return {key: [] for key in _DETAIL_KEYS}
+        return {key: rows[0].get(key) or [] for key in _DETAIL_KEYS}
 
     def get_shared_concepts(self, paper_a: str, paper_b: str) -> list[dict]:
         """Find concepts discussed by both papers."""
@@ -147,26 +172,10 @@ class KnowledgeGraphQueries:
             - 'related': related concepts (RELATED_TO both directions)
             - 'extensions': concepts that extend this one (EXTENDS outgoing)
         """
-        prerequisites = self.conn.execute_read(
-            f"""MATCH (c1:{CONCEPT})<-[:{SUBTOPIC_OF}]-(c2:{CONCEPT} {{name: $name}})
-            RETURN c1.name AS name, c1.description AS description, c1.domain AS domain""",
-            {"name": concept_name},
-        )
-        related = self.conn.execute_read(
-            f"""MATCH (c1:{CONCEPT} {{name: $name}})-[:{RELATED_TO}]-(c2:{CONCEPT})
-            RETURN c2.name AS name, c2.description AS description, c2.domain AS domain""",
-            {"name": concept_name},
-        )
-        extensions = self.conn.execute_read(
-            f"""MATCH (c1:{CONCEPT} {{name: $name}})-[:{EXTENDS}]->(c2:{CONCEPT})
-            RETURN c2.name AS name, c2.description AS description, c2.domain AS domain""",
-            {"name": concept_name},
-        )
-        return {
-            "prerequisites": prerequisites or [],
-            "related": related or [],
-            "extensions": extensions or [],
-        }
+        rows = self.conn.execute_read(_CONCEPT_HIERARCHY_QUERY, {"name": concept_name})
+        if not rows:
+            return {"prerequisites": [], "related": [], "extensions": []}
+        return {key: rows[0].get(key) or [] for key in ("prerequisites", "related", "extensions")}
 
     def get_graph_stats(self) -> dict:
         """Get high-level statistics about the knowledge graph."""
@@ -204,7 +213,6 @@ class KnowledgeGraphQueries:
         nodes: list[dict] = []
         edges: list[dict] = []
         seen_nodes: set[str] = set()
-        paper_metadata: dict[str, dict] = {}
 
         allowed_rels = set(rel_types) if rel_types else None
 
@@ -252,7 +260,6 @@ class KnowledgeGraphQueries:
                 }
                 nodes.append(node_data)
                 seen_nodes.add(paper_id)
-                paper_metadata[paper_id] = node_data
 
         def _paper_id(row: dict) -> str:
             doc_id = row["paper_doc"] or row["paper"]
@@ -674,11 +681,10 @@ class KnowledgeGraphQueries:
         """Async version of get_paper_details — matches on document_id or title."""
         if not document_id:
             return {key: [] for key in _DETAIL_KEYS}
-        params = {"key": document_id}
-        results = await asyncio.gather(
-            *(self.conn.aexecute_read(query, params) for query in _PAPER_DETAILS_QUERIES)
-        )
-        return dict(zip(_DETAIL_KEYS, results))
+        rows = await self.conn.aexecute_read(_PAPER_DETAILS_QUERY, {"key": document_id})
+        if not rows:
+            return {key: [] for key in _DETAIL_KEYS}
+        return {key: rows[0].get(key) or [] for key in _DETAIL_KEYS}
 
     async def aget_shared_concepts(self, paper_a: str, paper_b: str) -> list[dict]:
         return await self.conn.aexecute_read(

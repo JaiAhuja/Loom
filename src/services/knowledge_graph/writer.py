@@ -169,11 +169,13 @@ class KnowledgeGraphWriter:
         """
         self._ensure_schema()
         try:
-            self._write_paper(profile, document_id)
-            self._write_details(profile, document_id)
-            self._write_concepts(profile, document_id)
-            self._write_methods(profile, document_id)
-            self._write_findings(profile, document_id)
+            queries: list[tuple[str, dict]] = []
+            self._write_paper(profile, document_id, queries)
+            self._write_details(profile, document_id, queries)
+            self._write_concepts(profile, document_id, queries)
+            self._write_methods(profile, document_id, queries)
+            self._write_findings(profile, document_id, queries)
+            self._conn.execute_write_tx(queries)
             logger.info(
                 "KG: wrote profile for document_id=%r  title=%r  concepts=%d  methods=%d  findings=%d",
                 document_id,
@@ -334,9 +336,14 @@ class KnowledgeGraphWriter:
             initialize_schema(self._conn)
             self._schema_ready = True
 
-    def _write_paper(self, profile: "PaperProfile", document_id: str) -> None:
+    def _write_paper(
+        self,
+        profile: "PaperProfile",
+        document_id: str,
+        write_queries: list[tuple[str, dict]] | None = None,
+    ) -> None:
         authors_str = ", ".join(profile.authors) if profile.authors else ""
-        self._conn.execute_write(
+        query = (
             f"""MERGE (p:{PAPER} {{document_id: $document_id}})
             SET p.title      = $title,
                 p.domain     = $domain,
@@ -352,8 +359,17 @@ class KnowledgeGraphWriter:
                 "authors_str": authors_str,
             },
         )
+        if write_queries is None:
+            self._conn.execute_write(*query)
+        else:
+            write_queries.append(query)
 
-    def _write_details(self, profile: "PaperProfile", document_id: str) -> None:
+    def _write_details(
+        self,
+        profile: "PaperProfile",
+        document_id: str,
+        write_queries: list[tuple[str, dict]] | None = None,
+    ) -> None:
         """Upsert paper-owned detail nodes for the central Paper node."""
         detail_fields = [
             ("contribution", "CONTRIBUTES", getattr(profile, "contributions", [])),
@@ -411,9 +427,17 @@ class KnowledgeGraphWriter:
                     {"document_id": document_id, "items": items},
                 )
             )
-        self._conn.execute_write_tx(queries)
+        if write_queries is None:
+            self._conn.execute_write_tx(queries)
+        else:
+            write_queries.extend(queries)
 
-    def _write_concepts(self, profile: "PaperProfile", document_id: str) -> None:
+    def _write_concepts(
+        self,
+        profile: "PaperProfile",
+        document_id: str,
+        write_queries: list[tuple[str, dict]] | None = None,
+    ) -> None:
         """Upsert all concepts and DISCUSSES edges in a single round-trip via UNWIND."""
         if not profile.concepts:
             return
@@ -427,7 +451,7 @@ class KnowledgeGraphWriter:
             }
             for c in profile.concepts
         ]
-        self._conn.execute_write(
+        query = (
             f"""UNWIND $items AS item
             MERGE (c:{CONCEPT} {{concept_key: item.concept_key}})
             SET c.name        = item.name,
@@ -439,13 +463,22 @@ class KnowledgeGraphWriter:
             SET r.depth = item.depth""",
             {"items": items, "document_id": document_id},
         )
+        if write_queries is None:
+            self._conn.execute_write(*query)
+        else:
+            write_queries.append(query)
 
-    def _write_methods(self, profile: "PaperProfile", document_id: str) -> None:
+    def _write_methods(
+        self,
+        profile: "PaperProfile",
+        document_id: str,
+        write_queries: list[tuple[str, dict]] | None = None,
+    ) -> None:
         """Upsert all methods and USES_METHOD edges in a single round-trip via UNWIND."""
         if not profile.methods:
             return
         items = [{"name": m.name, "description": m.description} for m in profile.methods]
-        self._conn.execute_write(
+        query = (
             f"""UNWIND $items AS item
             MERGE (m:{METHOD} {{name: item.name}})
             SET m.description = item.description
@@ -454,8 +487,17 @@ class KnowledgeGraphWriter:
             MERGE (p)-[:{USES_METHOD}]->(m)""",
             {"items": items, "document_id": document_id},
         )
+        if write_queries is None:
+            self._conn.execute_write(*query)
+        else:
+            write_queries.append(query)
 
-    def _write_findings(self, profile: "PaperProfile", document_id: str) -> None:
+    def _write_findings(
+        self,
+        profile: "PaperProfile",
+        document_id: str,
+        write_queries: list[tuple[str, dict]] | None = None,
+    ) -> None:
         """Replace a paper's findings atomically using one batched UNWIND."""
         paper_title = profile.title or document_id
         items = [
@@ -493,7 +535,10 @@ class KnowledgeGraphWriter:
                     },
                 )
             )
-        self._conn.execute_write_tx(queries)
+        if write_queries is None:
+            self._conn.execute_write_tx(queries)
+        else:
+            write_queries.extend(queries)
 
     @staticmethod
     def _call_llm_for_links(

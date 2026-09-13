@@ -122,17 +122,19 @@ def select_key_sections(text: str, budget: int = 75000) -> str:
             if not seen_first_priority:
                 front_matter.append(part)
 
-    selected = ""
+    selected_parts: list[str] = []
+    selected_length = 0
     for section in front_matter + prioritised:
-        if len(selected) + len(section) <= budget:
-            selected += section
+        if selected_length + len(section) <= budget:
+            selected_parts.append(section)
+            selected_length += len(section)
         else:
-            remaining = budget - len(selected)
+            remaining = budget - selected_length
             if remaining > 200:
-                selected += section[:remaining]
+                selected_parts.append(section[:remaining])
             break
 
-    return selected or text[:budget]
+    return "".join(selected_parts) or text[:budget]
 
 
 def _safe_file_name(file_name: str) -> str:

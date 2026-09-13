@@ -82,7 +82,6 @@ class Neo4jConnection:
         the database instance is running (not just the server).
         """
         try:
-            self.driver.verify_connectivity()
             self.execute_read("RETURN 1")
             return True
         except Exception:

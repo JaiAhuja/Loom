@@ -13,7 +13,7 @@ import os
 import re
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
-from typing import Any, Iterable, Optional
+from typing import Any, Iterable, Iterator, Optional
 
 _DEFAULT_DIR = "./data/chat_history"
 _FILENAME_SAFE = re.compile(r"[^a-zA-Z0-9_-]+")
@@ -207,10 +207,15 @@ class ChatStore:
 
     def list_chats(self) -> list[dict]:
         """Return directory entries (newest first) with light metadata."""
-        if not os.path.isdir(self.directory):
-            return []
+        entries = [entry for entry, _ in self._iter_chats(include_searchable=False)]
+        entries.sort(key=lambda e: e["modified"], reverse=True)
+        return entries
 
-        entries: list[dict] = []
+    def _iter_chats(self, include_searchable: bool = True) -> Iterator[tuple[dict, str]]:
+        """Yield chat entries and searchable text while reading each file once."""
+        if not os.path.isdir(self.directory):
+            return
+
         for name in os.listdir(self.directory):
             path = os.path.join(self.directory, name)
             if not os.path.isfile(path):
@@ -226,15 +231,30 @@ class ChatStore:
                     metadata = data.get("metadata") or {}
                     if not isinstance(metadata, dict):
                         metadata = {}
-                    entries.append(_entry(name, path, topic, "json", metadata))
+                    entry = _entry(name, path, topic, "json", metadata)
+                    searchable_text = ""
+                    if include_searchable:
+                        searchable_text = "\n".join(
+                            message.get("content", "")
+                            for message in _normalise_messages(data.get("messages"))
+                        )
+                    yield entry, searchable_text
                 except (OSError, json.JSONDecodeError):
                     logger.debug("Skipping unreadable chat history file: %s", path, exc_info=True)
                     continue
             elif name.endswith(".md"):
-                entries.append(_entry(name, path, os.path.splitext(name)[0].replace("-", " "), "md"))
-
-        entries.sort(key=lambda e: e["modified"], reverse=True)
-        return entries
+                searchable_text = ""
+                if include_searchable:
+                    try:
+                        with open(path, "r", encoding="utf-8") as f:
+                            searchable_text = f.read()
+                    except OSError:
+                        logger.debug("Skipping unreadable markdown chat: %s", path, exc_info=True)
+                        continue
+                yield (
+                    _entry(name, path, os.path.splitext(name)[0].replace("-", " "), "md"),
+                    searchable_text,
+                )
 
     def search(self, query: str) -> list[dict]:
         """Case-insensitive substring search over topic + message content."""
@@ -242,33 +262,10 @@ class ChatStore:
             return self.list_chats()
         q = query.strip().lower()
         hits: list[dict] = []
-        for entry in self.list_chats():
-            if q in entry["topic"].lower():
+        for entry, searchable_text in self._iter_chats(include_searchable=True):
+            if q in entry["topic"].lower() or q in searchable_text.lower():
                 hits.append(entry)
-                continue
-            if entry["type"] == "json":
-                try:
-                    record = self.load(entry["filename"])
-                except Exception:
-                    logger.debug(
-                        "Skipping unreadable chat during search: %s",
-                        entry["filename"],
-                        exc_info=True,
-                    )
-                    continue
-                if any(q in (m.get("content") or "").lower() for m in record.messages):
-                    hits.append(entry)
-            else:
-                try:
-                    with open(entry["path"], "r", encoding="utf-8") as f:
-                        if q in f.read().lower():
-                            hits.append(entry)
-                except OSError:
-                    logger.debug(
-                        "Skipping unreadable markdown chat during search: %s",
-                        entry["path"],
-                        exc_info=True,
-                    )
+        hits.sort(key=lambda e: e["modified"], reverse=True)
         return hits
 
     def render_markdown(self, filename: str) -> str:

@@ -107,6 +107,12 @@ def test_vector_store_persists_and_manages_document_metadata(monkeypatch, tmp_pa
             "chunk_count": 2,
         }
     ]
+    assert store.get_paper("notes", "paper") == {
+        "document_id": "paper",
+        "title": "Paper",
+        "domain": "AI",
+        "chunk_count": 2,
+    }
     assert store.is_document_indexed("notes", "paper") is True
     assert store.delete_paper("notes", "paper") == 2
     assert store.get_collection_count("notes") == 0
@@ -164,6 +170,17 @@ def test_graph_schema_initialization_and_queries_use_parameterized_contracts():
     connection = Connection()
     schema.initialize_schema(connection)
     assert len(calls) == 12
+
+    batched_calls = []
+
+    class BatchConnection:
+        def execute_write_tx(self, queries):
+            batched_calls.append(queries)
+
+    schema.initialize_schema(BatchConnection())
+    assert len(batched_calls) == 1
+    assert len(batched_calls[0]) == 12
+
     assert schema.make_concept_key(" Attention ", "nlp") == "ai:attention"
     assert schema.make_finding_key("Paper", "Claim") == schema.make_finding_key(" paper ", " claim ")
 
@@ -175,6 +192,28 @@ def test_graph_schema_initialization_and_queries_use_parameterized_contracts():
         assert False, "Unsupported relationships must be rejected"
     except ValueError:
         pass
+
+
+def test_paper_details_use_one_graph_round_trip():
+    calls = []
+
+    class Connection:
+        def execute_read(self, query, parameters=None):
+            calls.append((query, parameters))
+            return [
+                {
+                    "concepts": [{"name": "attention"}],
+                    "methods": [{"name": "Transformer"}],
+                    "findings": [{"claim": "It works"}],
+                    "details": [{"category": "contribution"}],
+                }
+            ]
+
+    details = KnowledgeGraphQueries(Connection()).get_paper_details("paper-1")
+    assert details["concepts"][0]["name"] == "attention"
+    assert details["methods"][0]["name"] == "Transformer"
+    assert len(calls) == 1
+    assert calls[0][1] == {"key": "paper-1"}
 
 
 def test_knowledge_graph_writer_persists_profile_entities():
