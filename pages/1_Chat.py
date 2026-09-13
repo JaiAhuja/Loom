@@ -41,7 +41,7 @@ st.set_page_config(
 inject_stylesheet()
 configure_langsmith()
 
-graph_builder = GraphBuilder()
+graph_builder = GraphBuilder(settings_obj=settings)
 
 
 def _persist_toggle(label: str, state_key: str, **kwargs):

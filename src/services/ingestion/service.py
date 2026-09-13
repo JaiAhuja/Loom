@@ -205,11 +205,11 @@ class IngestionService:
                 result.file_results.append(fr)
                 continue
 
-            if self.store.is_document_indexed(collection_name, identity.document_id):
+            if self.store.is_document_indexed(collection_name, identity.document_id, strict=True):
                 fr.skipped = True
                 fr.success = True
 
-                paper_meta = self.store.get_paper(collection_name, identity.document_id)
+                paper_meta = self.store.get_paper(collection_name, identity.document_id, strict=True)
                 fr.paper_title = paper_meta["title"] if paper_meta else identity.document_id
                 fr.content_chunks = paper_meta["chunk_count"] if paper_meta else 0
 

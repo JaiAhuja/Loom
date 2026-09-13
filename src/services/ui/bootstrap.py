@@ -55,12 +55,12 @@ def check_neo4j_status() -> tuple[bool, str]:
 @st.cache_resource
 def get_neo4j_connection() -> Neo4jConnection:
     """Return the app-owned Neo4j service managed by Streamlit's cache."""
-    return create_neo4j_connection()
+    return create_neo4j_connection(settings_obj=settings)
 
 
 @st.cache_resource
 def get_vector_store() -> VectorStoreManager:
-    return VectorStoreManager()
+    return VectorStoreManager(settings_obj=settings)
 
 
 @st.cache_resource

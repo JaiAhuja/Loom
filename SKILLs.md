@@ -18,6 +18,9 @@ Ollama models, Chroma retrieval, and an optional Neo4j knowledge graph.
 ## Resource ownership
 
 - The application or service owner must create and own external resources.
+- Service constructors accept an explicit `Settings` dependency; the module
+  default exists only for standalone backwards-compatible use. App bootstrap
+  code supplies the application-owned settings instance.
 - Neo4j connections are created with `create_neo4j_connection(...)` and passed
   into graph services and tools. Do not add process-wide connection singletons.
 - Ollama chat and embedding clients are created by the provider functions but
@@ -41,6 +44,9 @@ Ollama models, Chroma retrieval, and an optional Neo4j knowledge graph.
   optional document scope before retrieving.
 - Empty results, stale document IDs, and retrieval failures must remain
   distinguishable. Do not turn dependency failures into “no results.”
+- Ingestion and destructive retrieval paths use typed `RetrievalError` failures
+  when a trustworthy result cannot be established. Best-effort UI listing paths
+  must remain explicitly documented as such.
 
 ## Tool contracts
 
@@ -52,6 +58,8 @@ Ollama models, Chroma retrieval, and an optional Neo4j knowledge graph.
   - `[TOOL_ERROR kind=invalid_input]` for malformed caller/model input.
   - `[TOOL_ERROR kind=dependency_unavailable]` for service connectivity issues.
   - `[TOOL_ERROR kind=execution_failed]` for other runtime failures.
+- Use `src/services/common/failures.py` to render these markers so RAG and graph
+  tools cannot drift into different failure formats.
 - The graph tool exposes named intents and parameterized queries only. Never
   accept raw Cypher from the model.
 - Keep tool formatting deterministic and include source/identity information

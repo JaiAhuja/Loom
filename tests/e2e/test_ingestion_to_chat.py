@@ -30,7 +30,7 @@ class InMemoryRetriever:
 class InMemoryVectorStore:
     documents: dict[str, list[Document]] = field(default_factory=dict)
 
-    def is_document_indexed(self, collection_name: str, document_id: str) -> bool:
+    def is_document_indexed(self, collection_name: str, document_id: str, *, strict: bool = False) -> bool:
         return any(
             doc.metadata.get("document_id") == document_id for doc in self.documents.get(collection_name, [])
         )

@@ -48,6 +48,13 @@ def test_runtime_validation_is_feature_scoped():
         Settings(NEO4J_PASSWORD=None).validate_runtime(require_neo4j=True)
 
 
+def test_runtime_validation_rejects_invalid_enabled_service_urls():
+    with pytest.raises(ValueError, match="OLLAMA_BASE_URL"):
+        Settings(OLLAMA_BASE_URL="localhost:11434").validate_runtime(require_ollama=True)
+    with pytest.raises(ValueError, match="NEO4J_URI"):
+        Settings(NEO4J_PASSWORD="secret", NEO4J_URI="http://neo4j").validate_runtime(require_neo4j=True)
+
+
 def test_invalid_retrieval_bounds_are_rejected():
     with pytest.raises(ValueError, match="RAG_FETCH_K"):
         Settings(RAG_TOP_K=10, RAG_FETCH_K=5)

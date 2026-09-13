@@ -39,7 +39,15 @@ class Settings(BaseSettings):
     AGENT_MAX_TOOL_CALLS: int = Field(default=8, ge=1, le=40)
     AGENT_MAX_REPEATED_EMPTY_RESULTS: int = Field(default=2, ge=1, le=10)
 
-    @field_validator("OLLAMA_BASE_URL", "OLLAMA_MODEL", "OLLAMA_EMBEDDING_MODEL")
+    @field_validator(
+        "OLLAMA_BASE_URL",
+        "OLLAMA_MODEL",
+        "OLLAMA_EMBEDDING_MODEL",
+        "CHROMA_PERSIST_DIR",
+        "OUTPUT_DIR",
+        "NEO4J_URI",
+        "NEO4J_USERNAME",
+    )
     @classmethod
     def _require_non_empty(cls, value: str) -> str:
         if not value or not value.strip():
@@ -68,14 +76,16 @@ class Settings(BaseSettings):
         """
         errors: list[str] = []
         if require_ollama:
-            if not self.OLLAMA_BASE_URL.strip():
-                errors.append("OLLAMA_BASE_URL is required")
+            if not self.OLLAMA_BASE_URL.startswith(("http://", "https://")):
+                errors.append("OLLAMA_BASE_URL must be an http(s) URL")
             if not self.OLLAMA_MODEL.strip():
                 errors.append("OLLAMA_MODEL is required")
         if require_embeddings and not self.OLLAMA_EMBEDDING_MODEL.strip():
             errors.append("OLLAMA_EMBEDDING_MODEL is required when RAG is enabled")
         if require_neo4j and not self.NEO4J_PASSWORD:
             errors.append("NEO4J_PASSWORD is required when the knowledge graph is enabled")
+        if require_neo4j and not self.NEO4J_URI.startswith(("bolt://", "neo4j://", "neo4j+s://")):
+            errors.append("NEO4J_URI must be a Neo4j bolt/neo4j URL")
         if errors:
             raise ValueError("Invalid Loom configuration: " + "; ".join(errors))
 
