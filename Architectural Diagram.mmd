@@ -60,11 +60,11 @@ flowchart TB
     %% ─────────────────────────────────────────
     subgraph KG["🔗 Knowledge Graph Layer"]
         direction TB
-        CONN["<b>graph_db/connection.py</b><br/>Neo4jConnection<br/>• Lazy driver init<br/>• execute_read()<br/>• execute_write()<br/>• execute_write_tx()"]
-        SCHEMA["<b>graph_db/schema.py</b><br/>Schema constants<br/>• Node labels: Paper, PaperDetail,<br/>  Concept, Method, Finding, Author<br/>• Rel types: HAS_DETAIL, DISCUSSES,<br/>  SUPPORTS, CONTRADICTS, etc.<br/>• stable node keys + allow-lists<br/>• initialize_schema()"]
-        QUERIES["<b>graph_db/queries.py</b><br/>KnowledgeGraphQueries<br/>• get_all_papers()<br/>• get_paper_details()<br/>• get_shared_concepts()<br/>• get_graph_stats()<br/>• get_graph_for_visualization()<br/>• Contradiction/support/extend queries"]
-        SERVICE["<b>graph_db/service.py</b><br/>GraphQueryService<br/>• 9 named intents<br/>• Parameter validation<br/>• No free-form Cypher"]
-        WRITER["<b>graph_db/writer.py</b><br/>KnowledgeGraphWriter<br/>• write_paper_profile()<br/>• Writes PaperDetail child nodes<br/>• link_findings() — cross-finding edges<br/>• link_concepts() — cross-concept edges<br/>• Atomic detail/finding rewrites<br/>• UNWIND batch for concepts &amp; methods"]
+        CONN["<b>services/knowledge_graph/connection.py</b><br/>Neo4jConnection<br/>• Lazy driver init<br/>• execute_read()<br/>• execute_write()<br/>• execute_write_tx()"]
+        SCHEMA["<b>services/knowledge_graph/schema.py</b><br/>Schema constants<br/>• Node labels: Paper, PaperDetail,<br/>  Concept, Method, Finding, Author<br/>• Rel types: HAS_DETAIL, DISCUSSES,<br/>  SUPPORTS, CONTRADICTS, etc.<br/>• stable node keys + allow-lists<br/>• initialize_schema()"]
+        QUERIES["<b>services/knowledge_graph/queries.py</b><br/>KnowledgeGraphQueries<br/>• get_all_papers()<br/>• get_paper_details()<br/>• get_shared_concepts()<br/>• get_graph_stats()<br/>• get_graph_for_visualization()<br/>• Contradiction/support/extend queries"]
+        SERVICE["<b>services/knowledge_graph/service.py</b><br/>GraphQueryService<br/>• 9 named intents<br/>• Parameter validation<br/>• No free-form Cypher"]
+        WRITER["<b>services/knowledge_graph/writer.py</b><br/>KnowledgeGraphWriter<br/>• write_paper_profile()<br/>• Writes PaperDetail child nodes<br/>• link_findings() — cross-finding edges<br/>• link_concepts() — cross-concept edges<br/>• Atomic detail/finding rewrites<br/>• UNWIND batch for concepts &amp; methods"]
     end
 
     %% ─────────────────────────────────────────

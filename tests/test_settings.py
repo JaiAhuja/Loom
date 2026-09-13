@@ -5,7 +5,6 @@ import os
 from config.settings import Settings, configure_langsmith
 
 
-# ---- defaults ---------------------------------------------------------------
 
 def test_settings_loads_with_defaults():
     """Settings can be instantiated and exposes expected default values."""
@@ -26,11 +25,9 @@ def test_langsmith_defaults_are_off():
     s = Settings()
     assert s.LANGSMITH_API_KEY == ""
     assert s.LANGSMITH_TRACING is False
-    # LangSmith project is configured via LANGCHAIN_PROJECT, not LANGSMITH_PROJECT.
     assert s.LANGCHAIN_PROJECT == "Loom"
 
 
-# ---- configure_langsmith ----------------------------------------------------
 
 def test_configure_langsmith_noop_when_disabled(monkeypatch):
     """configure_langsmith returns False when tracing is off (the default)."""
