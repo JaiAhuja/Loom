@@ -17,6 +17,7 @@ and Neo4j. No API key is required for the core workflow.
 | **Knowledge graph** | Neo4j paper profiles, concepts, methods, findings, and relationships |
 | **Graph Explorer** | Pyvis visualization, paper inspection, comparison, and safe queries |
 | **Chat history** | Save conversations locally and export them as Markdown |
+| **Evidence Notebook** | Save RAG-backed answers with personal notes, tags, and supporting excerpts |
 | **Optional tracing** | LangSmith observability and debugging |
 
 ## 🏗️ Architecture
@@ -201,6 +202,12 @@ relationship analysis.
 Use **Save Chat to History** to persist a conversation under
 `data/chat_history/`. Saved chats can be searched, resumed, deleted, or exported
 as Markdown.
+
+### Evidence Notebook
+
+When RAG is enabled, expand **Save this answer to Evidence Notebook** beneath a
+grounded response. Add an optional note or tags, then open **Evidence Notebook**
+to search, review, delete, or export the saved finding and its supporting excerpts.
 
 ## 🧩 Extending the Agent
 

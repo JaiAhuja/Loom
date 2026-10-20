@@ -93,6 +93,17 @@ OPTIONAL MATCH (f:{FINDING}) WITH papers, concepts, methods, count(f) AS finding
 OPTIONAL MATCH (d:{DETAIL}) WITH papers, concepts, methods, findings, count(d) AS details
 RETURN papers, concepts, methods, findings, details"""
 _EMPTY_STATS = dict.fromkeys(("papers", "concepts", "methods", "findings", "details"), 0)
+_SAFE_REL_TYPES = {
+    DISCUSSES,
+    HAS_DETAIL,
+    USES_METHOD,
+    HAS_FINDING,
+    RELATED_TO,
+    SUPPORTS,
+    CONTRADICTS,
+    EXTENDS,
+    SUBTOPIC_OF,
+}
 
 
 class KnowledgeGraphQueries:
@@ -181,6 +192,59 @@ class KnowledgeGraphQueries:
         """Get high-level statistics about the knowledge graph."""
         result = self.conn.execute_read(_STATS_QUERY)
         return result[0] if result else _EMPTY_STATS.copy()
+
+    def get_bounded_subgraph(
+        self, anchor: str, *, depth: int = 2, limit: int = 80, rel_types: list[str] | None = None
+    ) -> dict:
+        """Return a small, allow-listed neighborhood around a paper/concept.
+
+        Bounds and relationship labels are validated before being interpolated into
+        Cypher; the anchor and all other values remain parameters.
+        """
+        if not isinstance(anchor, str) or not anchor.strip():
+            raise ValueError("anchor must be non-empty")
+        if type(depth) is not int or not 1 <= depth <= 3:
+            raise ValueError("depth must be an integer between 1 and 3")
+        if type(limit) is not int or not 1 <= limit <= 200:
+            raise ValueError("limit must be an integer between 1 and 200")
+        selected = list(rel_types or [])
+        if any(rel not in _SAFE_REL_TYPES for rel in selected):
+            raise ValueError(f"relationship_types must be drawn from {sorted(_SAFE_REL_TYPES)}")
+        rel_filter = ""
+        params: dict = {"anchor": anchor.strip(), "limit": limit}
+        if selected:
+            rel_filter = " WHERE all(r IN relationships(path) WHERE type(r) IN $rel_types)"
+            params["rel_types"] = selected
+        rows = self.conn.execute_read(
+            f"""MATCH (start)
+            WHERE start.title = $anchor OR start.document_id = $anchor OR start.name = $anchor
+            MATCH path=(start)-[*1..{depth}]-(node){rel_filter}
+            RETURN [n IN nodes(path) | {{id: coalesce(n.document_id, n.name, n.title),
+                    label: coalesce(n.title, n.name, n.claim, n.text),
+                    type: head(labels(n))}}] AS nodes,
+                   [r IN relationships(path) | {{type: type(r),
+                    from: coalesce(startNode(r).document_id, startNode(r).name, startNode(r).title),
+                    to: coalesce(endNode(r).document_id, endNode(r).name,
+                                 endNode(r).title)}}] AS relationships
+            LIMIT $limit""",
+            params,
+        )
+        node_map: dict[str, dict] = {}
+        edges: dict[tuple, dict] = {}
+        for row in rows:
+            for node in row.get("nodes", []):
+                if node and node.get("id"):
+                    node_map[str(node["id"])] = node
+            for edge in row.get("relationships", []):
+                if edge:
+                    key = (edge.get("from"), edge.get("to"), edge.get("type"))
+                    edges[key] = edge
+        return {
+            "anchor": anchor,
+            "depth": depth,
+            "nodes": list(node_map.values()),
+            "edges": list(edges.values()),
+        }
 
     def get_graph_for_visualization(
         self,
@@ -721,3 +785,52 @@ class KnowledgeGraphQueries:
     async def aget_graph_stats(self) -> dict:
         result = await self.conn.aexecute_read(_STATS_QUERY)
         return result[0] if result else _EMPTY_STATS.copy()
+
+    async def aget_bounded_subgraph(
+        self, anchor: str, *, depth: int = 2, limit: int = 80, rel_types: list[str] | None = None
+    ) -> dict:
+        """Async counterpart of :meth:`get_bounded_subgraph`."""
+
+        if not isinstance(anchor, str) or not anchor.strip():
+            raise ValueError("anchor must be non-empty")
+        if type(depth) is not int or not 1 <= depth <= 3:
+            raise ValueError("depth must be an integer between 1 and 3")
+        if type(limit) is not int or not 1 <= limit <= 200:
+            raise ValueError("limit must be an integer between 1 and 200")
+        selected = list(rel_types or [])
+        if any(rel not in _SAFE_REL_TYPES for rel in selected):
+            raise ValueError(f"relationship_types must be drawn from {sorted(_SAFE_REL_TYPES)}")
+        rel_filter = ""
+        params: dict = {"anchor": anchor.strip(), "limit": limit}
+        if selected:
+            rel_filter = " WHERE all(r IN relationships(path) WHERE type(r) IN $rel_types)"
+            params["rel_types"] = selected
+        rows = await self.conn.aexecute_read(
+            f"""MATCH (start)
+            WHERE start.title = $anchor OR start.document_id = $anchor OR start.name = $anchor
+            MATCH path=(start)-[*1..{depth}]-(node){rel_filter}
+            RETURN [n IN nodes(path) | {{id: coalesce(n.document_id, n.name, n.title),
+                    label: coalesce(n.title, n.name, n.claim, n.text),
+                    type: head(labels(n))}}] AS nodes,
+                   [r IN relationships(path) | {{type: type(r),
+                    from: coalesce(startNode(r).document_id, startNode(r).name, startNode(r).title),
+                    to: coalesce(endNode(r).document_id, endNode(r).name,
+                                 endNode(r).title)}}] AS relationships
+            LIMIT $limit""",
+            params,
+        )
+        node_map: dict[str, dict] = {}
+        edges: dict[tuple, dict] = {}
+        for row in rows:
+            for node in row.get("nodes", []):
+                if node and node.get("id"):
+                    node_map[str(node["id"])] = node
+            for edge in row.get("relationships", []):
+                if edge:
+                    edges[(edge.get("from"), edge.get("to"), edge.get("type"))] = edge
+        return {
+            "anchor": anchor,
+            "depth": depth,
+            "nodes": list(node_map.values()),
+            "edges": list(edges.values()),
+        }

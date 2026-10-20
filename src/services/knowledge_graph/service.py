@@ -21,6 +21,7 @@ _INTENTS: dict[str, tuple[tuple[str, ...], str, tuple[str, ...]]] = {
     "contradiction_list": ((), "get_cross_paper_findings", ("CONTRADICTS",)),
     "support_list": ((), "get_cross_paper_findings", ("SUPPORTS",)),
     "extension_list": ((), "get_cross_paper_findings", ("EXTENDS",)),
+    "bounded_subgraph": (("anchor",), "get_bounded_subgraph", ()),
 }
 
 ALL_INTENTS: frozenset[str] = frozenset(_INTENTS)
@@ -47,11 +48,27 @@ class GraphQueryService:
     def execute(self, intent: str, params: dict[str, Any] | None = None) -> dict:
         """Dispatch an intent to its synchronous query method."""
         method, args, params = self._resolve(intent, params)
-        data = getattr(self._queries, method)(*args)
+        if intent == "bounded_subgraph":
+            data = getattr(self._queries, method)(
+                *args,
+                depth=params.get("depth", 2),
+                limit=params.get("limit", 80),
+                rel_types=params.get("relationship_types"),
+            )
+        else:
+            data = getattr(self._queries, method)(*args)
         return {"intent": intent, "params": params, "data": data}
 
     async def aexecute(self, intent: str, params: dict[str, Any] | None = None) -> dict:
         """Async dispatch intent to the matching query."""
         method, args, params = self._resolve(intent, params)
-        data = await getattr(self._queries, f"a{method}")(*args)
+        if intent == "bounded_subgraph":
+            data = await getattr(self._queries, f"a{method}")(
+                *args,
+                depth=params.get("depth", 2),
+                limit=params.get("limit", 80),
+                rel_types=params.get("relationship_types"),
+            )
+        else:
+            data = await getattr(self._queries, f"a{method}")(*args)
         return {"intent": intent, "params": params, "data": data}

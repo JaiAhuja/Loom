@@ -117,6 +117,22 @@ class DocumentProcessor:
         """Derive a deterministic chunk ID from document_id and chunk label."""
         return make_chunk_id(document_id, paper_chunk)
 
+    @staticmethod
+    def _provenance(chunk) -> dict:
+        """Extract best-effort page/section provenance from Docling chunks."""
+        meta = getattr(chunk, "meta", None)
+        pages: list[str] = []
+        for item in getattr(meta, "doc_items", []) or []:
+            for prov in getattr(item, "prov", []) or []:
+                page = getattr(prov, "page_no", None)
+                if page is not None and str(page) not in pages:
+                    pages.append(str(page))
+        headings = getattr(meta, "headings", None) or []
+        return {
+            "page_numbers": ",".join(pages),
+            "section": str(headings[-1]) if headings else "",
+        }
+
     def process(
         self,
         file_path: str,
@@ -222,6 +238,7 @@ class DocumentProcessor:
                     page_content=enriched_text,
                     metadata={
                         **base_metadata,
+                        **self._provenance(chunk),
                         "paper_chunk": f"chunk_{i + 1:03d}",
                         "chunk_type": "content",
                         "chunk_index": i,

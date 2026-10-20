@@ -15,6 +15,7 @@ navigation = st.navigation(
             icon="🕸️",
         ),
         st.Page(pages_dir / "3_Chat_History.py", title="Chat History", icon="📚"),
+        st.Page(pages_dir / "4_Notebook.py", title="Evidence Notebook", icon="📝"),
     ]
 )
 navigation.run()

@@ -202,3 +202,22 @@ def test_safe_graph_tool_rejects_invalid_params_and_formats_results():
     tool = create_safe_graph_tool(SimpleNamespace(execute_read=lambda *args, **kwargs: []))
     tool._svc = Queries() if hasattr(tool, "_svc") else None
     assert tool.name == "query_knowledge_graph"
+
+
+def test_bounded_subgraph_is_bounded_and_allowlisted():
+    captured = {}
+
+    def execute_read(query, params=None):
+        captured["query"] = query
+        captured["params"] = params
+        return [{"nodes": [{"id": "Paper A", "label": "Paper A", "type": "Paper"}], "relationships": []}]
+
+    service = GraphQueryService(SimpleNamespace(execute_read=execute_read))
+    result = service.execute("bounded_subgraph", {"anchor": "Paper A", "depth": 3, "limit": 20})
+    assert result["data"]["nodes"][0]["label"] == "Paper A"
+    assert "[*1..3]" in captured["query"]
+    assert captured["params"]["anchor"] == "Paper A"
+    with pytest.raises(ValueError):
+        service.execute("bounded_subgraph", {"anchor": "Paper A", "depth": 4})
+    with pytest.raises(ValueError):
+        service.execute("bounded_subgraph", {"anchor": "Paper A", "relationship_types": ["RAW_CYPHER"]})

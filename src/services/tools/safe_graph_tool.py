@@ -56,6 +56,10 @@ def create_safe_graph_tool(conn: Neo4jConnection) -> Any:
         "Returns:\n"
         "    A structured text summary of the query results."
     )
+    _TOOL_DESCRIPTION += (
+        "\nFor multi-hop questions use `bounded_subgraph` with an anchor and optional "
+        "depth (1-3), limit (1-200), and relationship_types."
+    )
 
     def _query_knowledge_graph(intent: str, params: str = "{}") -> str:
         parsed_params, error = _parse_params(params)
@@ -213,6 +217,15 @@ def _format_generic(data: Any) -> str:
     return str(data)
 
 
+def _format_subgraph(data: dict) -> str:
+    lines = [f"**Bounded subgraph around `{data.get('anchor', '?')}` (depth {data.get('depth', '?')})**"]
+    for node in data.get("nodes", []):
+        lines.append(f"- {node.get('label', '?')} [{node.get('type', '?')}]")
+    for edge in data.get("edges", []):
+        lines.append(f"  - {edge.get('from', '?')} -[{edge.get('type', '?')}]-> {edge.get('to', '?')}")
+    return "\n".join(lines) if len(lines) > 1 else "No connected nodes found."
+
+
 _FORMATTERS: dict[str, Any] = {
     "graph_stats": _format_graph_stats,
     "paper_list": lambda d: _format_list(
@@ -245,4 +258,5 @@ _FORMATTERS: dict[str, Any] = {
     "contradiction_list": lambda d: _format_finding_list(d, "Contradicting"),
     "support_list": lambda d: _format_finding_list(d, "Supporting"),
     "extension_list": lambda d: _format_finding_list(d, "Extending"),
+    "bounded_subgraph": lambda d: _format_subgraph(d),
 }
