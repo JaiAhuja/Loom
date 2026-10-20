@@ -18,11 +18,20 @@ def _format_doc_result(doc: Document, index: int) -> str:
     domain = metadata.get("domain") or ""
     chunk_id = metadata.get("paper_chunk") or "?"
     chunk_type = metadata.get("chunk_type") or "content"
+    provenance = []
+    if metadata.get("page_numbers"):
+        provenance.append(f"pp. {metadata['page_numbers']}")
+    if metadata.get("section"):
+        provenance.append(f"§ {metadata['section']}")
+    provenance_badge = f" | {' · '.join(provenance)}" if provenance else ""
     content = getattr(doc, "page_content", "") or ""
 
     type_badge = " [SUMMARY]" if chunk_type == "summary" else ""
     domain_badge = f" | {domain}" if domain else ""
-    return f"**Document {index}** (Paper: {paper}{domain_badge}, Chunk: {chunk_id}{type_badge}):\n\n{content}"
+    return (
+        f"**Document {index}** (Paper: {paper}{domain_badge}, Chunk: {chunk_id}"
+        f"{type_badge}{provenance_badge}):\n\n{content}"
+    )
 
 
 def _format_docs(docs: list[Document]) -> str:

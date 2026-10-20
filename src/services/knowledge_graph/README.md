@@ -14,6 +14,10 @@ intent-based query service used by the agent tool.
   findings, statistics, visualization, and deletion.
 - `GraphQueryService` — maps approved named intents to query methods.
 
+The agent also exposes `bounded_subgraph`, which accepts an anchor plus strict
+depth (1–3), result-count (1–200), and relationship allow-list bounds. This
+supports multi-hop research questions without accepting raw Cypher.
+
 ## Safety and data model
 
 Graph access must remain parameterised. The agent receives named intents through

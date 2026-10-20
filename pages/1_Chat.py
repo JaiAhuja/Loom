@@ -1,12 +1,14 @@
 """Run the Loom Streamlit chat interface and coordinate its services."""
 
 import os
+import re
 
 import streamlit as st
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from config.settings import configure_langsmith, settings
 from src.services.chat import ChatMetadata, ChatStore
+from src.services.notebook import Evidence, NotebookEntry, NotebookStore
 from src.services.evaluation import RAGJudge
 from src.services.agent import GraphBuilder
 from src.services.ingestion import IngestionService
@@ -471,12 +473,12 @@ if user_input := st.chat_input("Ask about any concept in DE, DS, or AI..."):
             except Exception as e:
                 response = format_chat_error(e, model)
 
+        retrieved_chunks = [
+            msg.content
+            for msg in result.get("messages", [])
+            if isinstance(msg, ToolMessage) and getattr(msg, "name", "") == "query_documents"
+        ]
         if use_rag and use_rag_eval:
-            retrieved_chunks = [
-                msg.content
-                for msg in result.get("messages", [])
-                if isinstance(msg, ToolMessage) and getattr(msg, "name", "") == "query_documents"
-            ]
             if retrieved_chunks:
                 with st.spinner("Evaluating response quality..."):
                     judge = RAGJudge()
@@ -490,5 +492,52 @@ if user_input := st.chat_input("Ask about any concept in DE, DS, or AI..."):
                     response = response + eval_result.as_markdown()
 
         st.markdown(response)
+
+        if use_rag and retrieved_chunks:
+            with st.expander("📝 Save this answer to Evidence Notebook"):
+                notebook_note = st.text_area(
+                    "Your note (optional)",
+                    placeholder="What should I remember or verify?",
+                    key=f"notebook_note_{len(st.session_state.messages)}",
+                )
+                notebook_tags = st.text_input(
+                    "Tags (optional)",
+                    placeholder="e.g. transformers, follow-up",
+                    key=f"notebook_tags_{len(st.session_state.messages)}",
+                )
+                if st.button(
+                    "Save evidence",
+                    type="primary",
+                    key=f"save_note_{len(st.session_state.messages)}",
+                ):
+                    evidence = []
+                    for chunk in retrieved_chunks:
+                        raw = str(chunk)
+                        pages_match = re.search(r"\| pp\. ([^|,)]+)", raw)
+                        section_match = re.search(r"\| § ([^):]+)", raw)
+                        evidence.append(
+                            Evidence(
+                                text=raw,
+                                source=paper_filter or "Uploaded documents",
+                                pages=pages_match.group(1).strip() if pages_match else "",
+                                section=section_match.group(1).strip() if section_match else "",
+                            )
+                        )
+                    note = NotebookEntry(
+                        title=user_input.strip().splitlines()[0][:80] or "Research note",
+                        question=user_input,
+                        answer=response,
+                        note=notebook_note.strip(),
+                        tags=[tag.strip() for tag in notebook_tags.split(",") if tag.strip()],
+                        collection=collection_name,
+                        paper=paper_filter,
+                        document_id=document_id_filter,
+                        evidence=evidence,
+                    )
+                    try:
+                        saved = NotebookStore().save(note)
+                        st.success(f"Saved to Evidence Notebook: {os.path.basename(saved)}")
+                    except (OSError, ValueError) as exc:
+                        st.error(f"Could not save notebook entry: {exc}")
 
     st.session_state.messages.append({"role": "assistant", "content": response})
