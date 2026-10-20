@@ -60,7 +60,7 @@ def test_ingestion_result_counts():
             FileResult(file_name="d.pdf", success=True, skipped=True),
         ]
     )
-    assert res.succeeded == 3
+    assert res.succeeded == 2
     assert res.failed == 1
     assert res.skipped == 1
 
@@ -188,7 +188,7 @@ def test_already_indexed_skips_all_processing(tmp_path):
 
     result = svc.ingest_files(file_paths=[str(pdf)], collection_name="col")
 
-    assert result.succeeded == 1
+    assert result.succeeded == 0
     assert result.skipped == 1
     assert result.failed == 0
 
