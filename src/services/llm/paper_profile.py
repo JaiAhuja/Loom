@@ -103,7 +103,7 @@ def select_key_sections(text: str, budget: int = 75000) -> str:
     """Pick front matter and high-signal sections (abstract, results, conclusions) up to budget chars."""
     if not isinstance(text, str):
         return ""
-    budget = max(1_000, min(int(budget or 75_000), 150_000))
+    budget = max(1, min(int(budget or 75_000), 150_000))
     parts = re.split(r"(?=^#{1,3}\s)", text, flags=re.MULTILINE)
 
     front_matter: list[str] = []
@@ -130,7 +130,7 @@ def select_key_sections(text: str, budget: int = 75000) -> str:
             selected_length += len(section)
         else:
             remaining = budget - selected_length
-            if remaining > 200:
+            if remaining > 0:
                 selected_parts.append(section[:remaining])
             break
 

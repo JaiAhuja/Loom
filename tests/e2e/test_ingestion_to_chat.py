@@ -35,6 +35,22 @@ class InMemoryVectorStore:
             doc.metadata.get("document_id") == document_id for doc in self.documents.get(collection_name, [])
         )
 
+    def get_paper(self, collection_name: str, document_id: str, *, strict: bool = False):
+        documents = [
+            doc
+            for doc in self.documents.get(collection_name, [])
+            if doc.metadata.get("document_id") == document_id
+        ]
+        if not documents:
+            return None
+        metadata = documents[0].metadata
+        return {
+            "document_id": document_id,
+            "title": metadata.get("paper", document_id),
+            "domain": metadata.get("domain", "Other"),
+            "chunk_count": len(documents),
+        }
+
     def add_documents(self, documents: list[Document], collection_name: str = "default") -> None:
         self.documents.setdefault(collection_name, []).extend(documents)
 
@@ -59,9 +75,9 @@ class FakeProcessor:
             "chunks": [
                 Document(
                     "Attention improves sequence modeling",
-                    {**metadata, "chunk_type": "content"},
+                    metadata={**metadata, "chunk_type": "content"},
                 ),
-                Document("Attention summary", {**metadata, "chunk_type": "summary"}),
+                Document("Attention summary", metadata={**metadata, "chunk_type": "summary"}),
             ],
             "markdown": "# Attention Paper\nAttention improves sequence modeling",
             "paper_title": "Attention Paper",

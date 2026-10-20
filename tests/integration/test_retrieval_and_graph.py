@@ -83,7 +83,7 @@ def test_vector_store_persists_and_manages_document_metadata(monkeypatch, tmp_pa
     documents = [
         Document(
             "summary",
-            {
+            metadata={
                 "chunk_id": DocumentProcessor.generate_chunk_id("paper", "summary"),
                 "document_id": "paper",
                 "paper": "Paper",
@@ -92,7 +92,7 @@ def test_vector_store_persists_and_manages_document_metadata(monkeypatch, tmp_pa
         ),
         Document(
             "body",
-            {
+            metadata={
                 "chunk_id": DocumentProcessor.generate_chunk_id("paper", "chunk_001"),
                 "document_id": "paper",
                 "paper": "Paper",
@@ -130,7 +130,7 @@ def test_vector_store_requires_canonical_identity_and_supports_explicit_legacy_m
     store = VectorStoreManager(persist_dir=str(tmp_path))
     store._embeddings = FakeEmbeddings()
     with pytest.raises(ValueError, match="canonical document_id"):
-        store.add_documents([Document("legacy", {"paper": "Paper"})], collection_name="notes")
+        store.add_documents([Document("legacy", metadata={"paper": "Paper"})], collection_name="notes")
 
     collection = client.get_or_create_collection("notes")
     collection.upsert(
