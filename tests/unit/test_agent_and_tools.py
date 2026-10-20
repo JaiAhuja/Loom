@@ -30,7 +30,7 @@ pytestmark = pytest.mark.unit
 
 
 def test_system_prompt_and_agent_routing_reflect_enabled_tools():
-    assert "offline mode" in build_system_prompt()
+    assert "offline mode" in build_system_prompt().lower()
     assert "query_documents" in build_system_prompt(use_rag=True)
     assert "query_knowledge_graph" in build_system_prompt(use_graph=True)
     assert should_continue({"messages": []}) == "end"
