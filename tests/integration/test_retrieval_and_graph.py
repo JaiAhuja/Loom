@@ -181,6 +181,16 @@ def test_document_processor_builds_summary_and_deterministic_chunks(monkeypatch,
     ]
 
 
+def test_document_processor_extracts_page_and_section_provenance():
+    chunk = SimpleNamespace(
+        meta=SimpleNamespace(
+            doc_items=[SimpleNamespace(prov=[SimpleNamespace(page_no=2), SimpleNamespace(page_no=3)])],
+            headings=["Methods"],
+        )
+    )
+    assert DocumentProcessor._provenance(chunk) == {"page_numbers": "2,3", "section": "Methods"}
+
+
 def test_graph_schema_initialization_and_queries_use_parameterized_contracts():
     calls = []
 

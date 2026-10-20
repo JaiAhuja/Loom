@@ -86,6 +86,8 @@ class NotebookStore:
     def load(self, filename: str) -> NotebookEntry:
         with open(self._path(filename), encoding="utf-8") as fh:
             data: dict[str, Any] = json.load(fh)
+        if not isinstance(data, dict):
+            raise ValueError(f"Notebook file is not a JSON object: {filename}")
         evidence = [
             Evidence(**{k: v for k, v in item.items() if k in Evidence.__dataclass_fields__})
             for item in data.get("evidence", [])
@@ -130,7 +132,26 @@ class NotebookStore:
         if not query.strip():
             return self.list_entries()
         q = query.lower().strip()
-        return [e for e in self.list_entries() if q in (e["title"] + " " + (e["paper"] or "")).lower()]
+        hits = []
+        for entry in self.list_entries():
+            try:
+                record = self.load(entry["filename"])
+            except (OSError, ValueError, json.JSONDecodeError):
+                continue
+            haystack = " ".join(
+                [
+                    record.title,
+                    record.question,
+                    record.answer,
+                    record.note,
+                    record.paper or "",
+                    " ".join(record.tags),
+                    " ".join(item.text for item in record.evidence),
+                ]
+            ).lower()
+            if q in haystack:
+                hits.append(entry)
+        return hits
 
     def delete(self, filename: str) -> None:
         path = self._path(filename)

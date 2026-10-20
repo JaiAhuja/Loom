@@ -103,7 +103,7 @@ class IngestionResult:
 
     @property
     def succeeded(self) -> int:
-        return sum(1 for r in self.file_results if r.success)
+        return sum(1 for r in self.file_results if r.success and not r.skipped)
 
     @property
     def failed(self) -> int:

@@ -195,12 +195,10 @@ def test_safe_graph_tool_rejects_invalid_params_and_formats_results():
     assert "Papers in the graph" in _format_result("paper_list", [{"title": "Paper", "domain": "AI"}])
     assert "No results" in _format_result("graph_stats", {})
 
-    class Queries:
-        def get_graph_stats(self):
-            return {"papers": 1, "concepts": 2}
-
-    tool = create_safe_graph_tool(SimpleNamespace(execute_read=lambda *args, **kwargs: []))
-    tool._svc = Queries() if hasattr(tool, "_svc") else None
+    tool = create_safe_graph_tool(
+        SimpleNamespace(execute_read=lambda *args, **kwargs: [{"papers": 1, "concepts": 2}])
+    )
+    assert "Papers" in tool.invoke({"intent": "graph_stats", "params": "{}"})
     assert tool.name == "query_knowledge_graph"
 
 
@@ -221,3 +219,23 @@ def test_bounded_subgraph_is_bounded_and_allowlisted():
         service.execute("bounded_subgraph", {"anchor": "Paper A", "depth": 4})
     with pytest.raises(ValueError):
         service.execute("bounded_subgraph", {"anchor": "Paper A", "relationship_types": ["RAW_CYPHER"]})
+
+
+def test_safe_graph_tool_invokes_bounded_subgraph_intent():
+    def execute_read(query, params=None):
+        return [
+            {
+                "nodes": [{"id": "Paper A", "label": "Paper A", "type": "Paper"}],
+                "relationships": [],
+            }
+        ]
+
+    tool = create_safe_graph_tool(SimpleNamespace(execute_read=execute_read))
+    result = tool.invoke(
+        {
+            "intent": "bounded_subgraph",
+            "params": '{"anchor":"Paper A","depth":1,"limit":5}',
+        }
+    )
+    assert "Bounded subgraph" in result
+    assert "Paper A" in result

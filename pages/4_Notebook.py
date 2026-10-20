@@ -1,4 +1,4 @@
-"""Browse durable, evidence-backed research notes."""
+import hashlib
 
 import streamlit as st
 
@@ -38,6 +38,11 @@ brief_selection = st.sidebar.multiselect(
 brief_instruction = st.sidebar.text_input(
     "Brief focus (optional)", placeholder="Compare findings and open questions"
 )
+brief_key = hashlib.sha256(
+    ("\n".join(sorted(brief_selection)) + "\n" + brief_instruction).encode("utf-8")
+).hexdigest()
+if st.session_state.get("notebook_brief_key") != brief_key:
+    st.session_state.pop("notebook_brief", None)
 if st.sidebar.button("✨ Generate brief", disabled=not brief_selection, use_container_width=True):
     selected_notes = [store.load(filename) for filename in brief_selection]
     source_text = "\n\n--- NOTE ---\n\n".join(note.to_markdown() for note in selected_notes)
@@ -52,6 +57,7 @@ if st.sidebar.button("✨ Generate brief", disabled=not brief_selection, use_con
             llm = get_llm(model=settings.OLLAMA_MODEL, temperature=0.1)
             brief = llm.invoke(prompt).content
             st.session_state["notebook_brief"] = brief
+            st.session_state["notebook_brief_key"] = brief_key
         except Exception as exc:
             st.sidebar.error(f"Could not generate brief: {exc}")
 
